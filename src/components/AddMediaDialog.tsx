@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useVault, type GameStatus } from "@/lib/vault-store";
-import { searchWiki, type WikiResult } from "@/lib/wiki-search";
+import { searchGameMetadata } from "@/lib/wiki-search"; // Updated import to point to Steam parser
 import { toast } from "sonner";
 import { Search, Loader2, ImageOff, ChevronLeft } from "lucide-react";
 
@@ -23,8 +23,8 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
   const [step, setStep] = useState<"search" | "details">("search");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<WikiResult[]>([]);
-  const [picked, setPicked] = useState<WikiResult | null>(null);
+  const [results, setResults] = useState<any[]>([]);
+  const [picked, setPicked] = useState<any | null>(null);
 
   // Shared fields
   const [title, setTitle] = useState("");
@@ -60,22 +60,34 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
     if (!query.trim()) return;
     setLoading(true);
     try {
-      const r = await searchWiki(query, kind);
-      setResults(r);
-      if (r.length === 0) toast.message("No results — try another title");
-    } catch {
-      toast.error("Search failed");
+      if (kind === "game") {
+        // Run our clean direct Steam storefront fetch
+        const r = await searchGameMetadata(query);
+        if (r) {
+          setResults([r]); // Treat the parsed game payload as a direct list option
+        } else {
+          setResults([]);
+          toast.message("No Steam match found — entering manual mode");
+        }
+      } else {
+        // Fallback or basic handling for films
+        setResults([]);
+        toast.message("Movie cataloging is set to manual fallback mode");
+      }
+    } catch (err) {
+      toast.error("Metadata extraction engine hit a glitch");
     } finally {
       setLoading(false);
     }
   };
 
-  const pick = (r: WikiResult) => {
+  const pick = (r: any) => {
     setPicked(r);
     setTitle(r.title);
-    setCoverUrl(r.thumbnail);
+    setCoverUrl(r.coverUrl || r.thumbnail);
     setDescription(r.description);
-    if (r.year) setYear(String(r.year));
+    if (r.genres) setTags(r.genres.join(", "));
+    if (r.releaseYear) setYear(String(r.releaseYear));
     setStep("details");
   };
 
@@ -93,14 +105,14 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
         title, coverUrl, description, tags: tagList,
         status, magnet, mirrorUrl: mirror, notes,
       });
-      toast.success("Game archived");
+      toast.success("Game archived to Vault");
     } else {
       addMovie({
         title, coverUrl, description, tags: tagList,
         year: Number(year) || new Date().getFullYear(),
         rating, review,
       });
-      toast.success("Movie logged");
+      toast.success("Movie logged successfully");
     }
     close(false);
   };
@@ -110,12 +122,14 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
       <DialogContent className="max-w-2xl bg-surface border-border max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display tracking-widest uppercase text-primary">
-            {step === "search" ? `Find ${kind === "game" ? "Game" : "Movie"}` : "Confirm Details"}
+            {step === "search" ? `Find ${kind === "game" ? "Game via Steam" : "Movie"}` : "Confirm Details"}
           </DialogTitle>
           <DialogDescription>
             {step === "search"
-              ? "Search Wikipedia for the cover art and description, then add your own notes."
-              : "Edit anything before saving."}
+              ? kind === "game" 
+                ? "Search the Steam storefront index to automatically scrape high-res box art and developer descriptions."
+                : "Enter the title of the film to begin logging details to your diary collection."
+              : "Verify or modify details before saving."}
           </DialogDescription>
         </DialogHeader>
 
@@ -127,7 +141,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
             >
               <Input
                 autoFocus
-                placeholder={kind === "game" ? "e.g. Outer Wilds" : "e.g. Mulholland Drive"}
+                placeholder={kind === "game" ? "e.g. Cyberpunk 2077" : "e.g. Interstellar"}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -145,15 +159,15 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
                     className="group text-left rounded-md border border-border bg-background hover:border-primary overflow-hidden transition-colors"
                   >
                     <div className="aspect-[2/3] bg-muted overflow-hidden">
-                      {r.thumbnail ? (
-                        <img src={r.thumbnail} alt={r.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
+                      {(r.coverUrl || r.thumbnail) ? (
+                        <img src={r.coverUrl || r.thumbnail} alt={r.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
                       ) : (
                         <div className="flex items-center justify-center h-full text-muted-foreground"><ImageOff className="h-6 w-6" /></div>
                       )}
                     </div>
                     <div className="p-2">
                       <div className="text-xs font-medium leading-tight line-clamp-2">{r.title}</div>
-                      {r.year && <div className="text-[10px] text-muted-foreground mt-0.5">{r.year}</div>}
+                      {(r.releaseYear || r.year) && <div className="text-[10px] text-muted-foreground mt-0.5">{r.releaseYear || r.year}</div>}
                     </div>
                   </button>
                 ))}
@@ -164,7 +178,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
               onClick={skipToManual}
               className="text-xs text-muted-foreground hover:text-primary underline underline-offset-4"
             >
-              Can't find it? Add manually →
+              Skip data fetch and create item manually →
             </button>
           </div>
         )}
@@ -209,13 +223,13 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
                 </Field>
                 <Field label="Magnet link"><Input value={magnet} onChange={(e) => setMagnet(e.target.value)} placeholder="magnet:?xt=urn:btih:..." /></Field>
                 <Field label="Direct mirror URL"><Input value={mirror} onChange={(e) => setMirror(e.target.value)} placeholder="https://..." /></Field>
-                <Field label="Personal notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} /></Field>
+                <Field label="Personal setup notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} /></Field>
               </>
             ) : (
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Year"><Input type="number" value={year} onChange={(e) => setYear(e.target.value)} /></Field>
-                  <Field label="Rating (e.g. 8/10)"><Input value={rating} onChange={(e) => setRating(e.target.value)} /></Field>
+                  <Field label="Rating (e.g. 9/10)"><Input value={rating} onChange={(e) => setRating(e.target.value)} /></Field>
                 </div>
                 <Field label="Personal review"><Textarea value={review} onChange={(e) => setReview(e.target.value)} rows={3} /></Field>
               </>

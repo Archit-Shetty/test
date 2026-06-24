@@ -1,16 +1,31 @@
-// Wikipedia-backed search to pull cover thumbnails and descriptions.
-// No API key required, supports CORS via origin=*.
+// Rebuilt lookup client supporting both local server proxy queries for IGDB and standard Wikipedia data fallbacks.
 
 export interface WikiResult {
   title: string;
   description: string;
   thumbnail: string;
   year?: number;
+  genres?: string[];
 }
 
 export async function searchWiki(query: string, hint: "game" | "movie"): Promise<WikiResult[]> {
   const q = query.trim();
   if (!q) return [];
+
+  // PIVOT: If searching for a game, route completely into our backend IGDB security gateway proxy instead
+  if (hint === "game") {
+    try {
+      const res = await fetch(`/api/search-games?q=${encodeURIComponent(q)}`);
+      if (!res.ok) throw new Error("Backend IGDB gateway returned an error response status");
+      const gamesList = await res.json();
+      return gamesList as WikiResult[];
+    } catch (err) {
+      console.error("Game metadata fetching pipeline down, attempting basic wiki fallback configuration...", err);
+      // Fall through to standard wikipedia engine down below if server route crashes
+    }
+  }
+
+  // --- STANDARD WIKIPEDIA PROCESSING CLIENT (FOR MOVIES & RETRY FALLBACKS) ---
   const suffix = hint === "game" ? " video game" : " film";
   const url = new URL("https://en.wikipedia.org/w/api.php");
   url.search = new URLSearchParams({
@@ -50,4 +65,13 @@ export async function searchWiki(query: string, hint: "game" | "movie"): Promise
     .filter((r) => r.thumbnail)
     .sort((a, b) => a.index - b.index)
     .map(({ index: _i, ...r }) => r);
+}
+
+// Retaining signature wrapper support if other codebase files call this interface explicitly
+export async function searchGameMetadata(query: string): Promise<WikiResult[] | null> {
+  try {
+    return await searchWiki(query, "game");
+  } catch {
+    return null;
+  }
 }
