@@ -6,9 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useVault, type GameStatus } from "@/lib/vault-store";
-import { searchGameMetadata } from "@/lib/wiki-search"; // Updated import to point to Steam parser
+import { searchGameMetadata } from "@/lib/wiki-search";
 import { toast } from "sonner";
-import { Search, Loader2, ImageOff, ChevronLeft } from "lucide-react";
+import { Search, Loader2, ImageOff, ChevronLeft, Download } from "lucide-react";
 
 type Kind = "game" | "movie";
 
@@ -23,8 +23,9 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
   const [step, setStep] = useState<"search" | "details">("search");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [scrapingRepack, setScrapingRepack] = useState(false);
   const [results, setResults] = useState<any[]>([]);
-  const [picked, setPicked] = useState<any | null>(null);
+  const [scrapedData, setScrapedData] = useState<{ found: boolean; magnet?: string; pageUrl?: string } | null>(null);
 
   // Shared fields
   const [title, setTitle] = useState("");
@@ -45,7 +46,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
 
   const reset = () => {
     setStep("search");
-    setQuery(""); setResults([]); setPicked(null);
+    setQuery(""); setResults([]); setScrapedData(null);
     setTitle(""); setCoverUrl(""); setDescription(""); setTags("");
     setStatus("Backlog"); setMagnet(""); setMirror(""); setNotes("");
     setYear(""); setRating(""); setReview("");
@@ -60,39 +61,60 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
     if (!query.trim()) return;
     setLoading(true);
     try {
-      if (kind === "game") {
-        // Run our clean direct Steam storefront fetch
-        const r = await searchGameMetadata(query);
-        if (r) {
-          setResults([r]); // Treat the parsed game payload as a direct list option
-        } else {
-          setResults([]);
-          toast.message("No Steam match found — entering manual mode");
-        }
+      const r = await searchGameMetadata(query);
+      if (r && r.length > 0) {
+        setResults(r);
       } else {
-        // Fallback or basic handling for films
         setResults([]);
-        toast.message("Movie cataloging is set to manual fallback mode");
+        toast.message("No results found — try another title string");
       }
-    } catch (err) {
-      toast.error("Metadata extraction engine hit a glitch");
+    } catch {
+      toast.error("Search gateway timeout");
     } finally {
       setLoading(false);
     }
   };
 
-  const pick = (r: any) => {
-    setPicked(r);
+  const pick = async (r: any) => {
     setTitle(r.title);
-    setCoverUrl(r.coverUrl || r.thumbnail);
-    setDescription(r.description);
+    setCoverUrl(r.coverUrl || r.thumbnail || "");
+    setDescription(r.description || "");
     if (r.genres) setTags(r.genres.join(", "));
-    if (r.releaseYear) setYear(String(r.releaseYear));
+    if (r.year) setYear(String(r.year));
     setStep("details");
+
+    if (kind === "game") {
+      setScrapingRepack(true);
+      setScrapedData(null);
+      try {
+        const repackRes = await fetch(`/api/scrape-repack?title=${encodeURIComponent(r.title)}`);
+        if (repackRes.ok) {
+          const resJson = await repackRes.json();
+          setScrapedData(resJson);
+          if (resJson.found) {
+            toast.success("FitGirl repack located automatically!");
+          } else {
+            toast.message("No repack match on FitGirl. Entry set to manual link configuration.");
+          }
+        }
+      } catch (err) {
+        console.error("Scraper cluster error:", err);
+      } finally {
+        setScrapingRepack(false);
+      }
+    }
+  };
+
+  const injectScrapedRepack = () => {
+    if (scrapedData?.found && scrapedData.magnet) {
+      setMagnet(scrapedData.magnet);
+      setMirror(scrapedData.pageUrl || "");
+      toast.success("Magnet and download mirror links successfully auto-filled!");
+    }
   };
 
   const skipToManual = () => {
-    setPicked(null);
+    setScrapedData(null);
     setTitle(query);
     setStep("details");
   };
@@ -122,14 +144,12 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
       <DialogContent className="max-w-2xl bg-surface border-border max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display tracking-widest uppercase text-primary">
-            {step === "search" ? `Find ${kind === "game" ? "Game via Steam" : "Movie"}` : "Confirm Details"}
+            {step === "search" ? `Find ${kind === "game" ? "Game via IGDB" : "Movie"}` : "Confirm Details"}
           </DialogTitle>
           <DialogDescription>
             {step === "search"
-              ? kind === "game" 
-                ? "Search the Steam storefront index to automatically scrape high-res box art and developer descriptions."
-                : "Enter the title of the film to begin logging details to your diary collection."
-              : "Verify or modify details before saving."}
+              ? "Search the database metadata network index to automatically scrape high-res box graphics."
+              : "Edit your entry configurations before saving to your collections storage."}
           </DialogDescription>
         </DialogHeader>
 
@@ -141,7 +161,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
             >
               <Input
                 autoFocus
-                placeholder={kind === "game" ? "e.g. Cyberpunk 2077" : "e.g. Interstellar"}
+                placeholder={kind === "game" ? "e.g. Elden Ring" : "e.g. Mulholland Drive"}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -152,25 +172,28 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
 
             {results.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {results.map((r) => (
-                  <button
-                    key={r.title}
-                    onClick={() => pick(r)}
-                    className="group text-left rounded-md border border-border bg-background hover:border-primary overflow-hidden transition-colors"
-                  >
-                    <div className="aspect-[2/3] bg-muted overflow-hidden">
-                      {(r.coverUrl || r.thumbnail) ? (
-                        <img src={r.coverUrl || r.thumbnail} alt={r.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-muted-foreground"><ImageOff className="h-6 w-6" /></div>
-                      )}
-                    </div>
-                    <div className="p-2">
-                      <div className="text-xs font-medium leading-tight line-clamp-2">{r.title}</div>
-                      {(r.releaseYear || r.year) && <div className="text-[10px] text-muted-foreground mt-0.5">{r.releaseYear || r.year}</div>}
-                    </div>
-                  </button>
-                ))}
+                {results.map((r, index) => {
+                  const imageSrc = r.coverUrl || r.thumbnail;
+                  return (
+                    <button
+                      key={`${r.title}-${index}`}
+                      onClick={() => pick(r)}
+                      className="group text-left rounded-md border border-border bg-background hover:border-primary overflow-hidden transition-colors"
+                    >
+                      <div className="aspect-[2/3] bg-muted overflow-hidden relative">
+                        {imageSrc ? (
+                          <img src={imageSrc} alt={r.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
+                        ) : (
+                          <div className="flex items-center justify-center h-full text-muted-foreground"><ImageOff className="h-6 w-6" /></div>
+                        )}
+                      </div>
+                      <div className="p-2">
+                        <div className="text-xs font-medium leading-tight line-clamp-2">{r.title}</div>
+                        {r.year && <div className="text-[10px] text-muted-foreground mt-0.5">{r.year}</div>}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
 
@@ -178,19 +201,33 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
               onClick={skipToManual}
               className="text-xs text-muted-foreground hover:text-primary underline underline-offset-4"
             >
-              Skip data fetch and create item manually →
+              Can't find it? Add manually →
             </button>
           </div>
         )}
 
         {step === "details" && (
           <div className="space-y-4">
-            <button
-              onClick={() => setStep("search")}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
-            >
+            <button onClick={() => setStep("search")} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary">
               <ChevronLeft className="h-3 w-3" /> back to search
             </button>
+
+            {kind === "game" && (
+              <div className="p-3 rounded-lg border border-border bg-background/50 flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">FitGirl Deep Downloader Scan</div>
+                  <div className="text-xs text-muted-foreground">
+                    {scrapingRepack ? "Following deep links and parsing post text..." : scrapedData?.found ? "Verified release matches located!" : "No automatic repack index match found."}
+                  </div>
+                </div>
+                {scrapingRepack && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                {!scrapingRepack && scrapedData?.found && (
+                  <Button size="sm" variant="secondary" onClick={injectScrapedRepack} className="flex items-center gap-1.5 text-xs bg-primary text-primary-foreground hover:bg-primary/90">
+                    <Download className="h-3 w-3" /> Inject Magnet
+                  </Button>
+                )}
+              </div>
+            )}
 
             <div className="flex gap-4">
               <div className="w-28 shrink-0 aspect-[2/3] rounded-md border border-border bg-background overflow-hidden">
@@ -203,7 +240,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
               <div className="flex-1 space-y-2">
                 <Field label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
                 <Field label="Cover image URL"><Input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} /></Field>
-                <Field label="Tags (comma separated)"><Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder={kind === "game" ? "RPG, Indie" : "Drama, Surreal"} /></Field>
+                <Field label="Tags (comma separated)"><Input value={tags} onChange={(e) => setTags(e.target.value)} /></Field>
               </div>
             </div>
 
@@ -229,7 +266,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Year"><Input type="number" value={year} onChange={(e) => setYear(e.target.value)} /></Field>
-                  <Field label="Rating (e.g. 9/10)"><Input value={rating} onChange={(e) => setRating(e.target.value)} /></Field>
+                  <Field label="Rating (e.g. 8/10)"><Input value={rating} onChange={(e) => setRating(e.target.value)} /></Field>
                 </div>
                 <Field label="Personal review"><Textarea value={review} onChange={(e) => setReview(e.target.value)} rows={3} /></Field>
               </>
@@ -237,9 +274,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
 
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" onClick={() => close(false)}>Cancel</Button>
-              <Button onClick={save} className="bg-primary text-primary-foreground hover:bg-primary/90">
-                Save to Vault
-              </Button>
+              <Button onClick={save} className="bg-primary text-primary-foreground hover:bg-primary/90">Save to Vault</Button>
             </div>
           </div>
         )}
