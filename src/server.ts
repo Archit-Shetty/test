@@ -72,8 +72,8 @@ export default {
     // --- 📡 ROUTE A: IGDB SECURE GAME LOOKUPS SEARCH ROUTE ---
     if (url.pathname === '/api/search-games') {
       try {
-        const query = url.searchParams.get('q');
-        if (!query) return new Response(JSON.stringify({ error: "Missing parameter q" }), { status: 400 });
+        const query = url.searchParams.get('query') || url.searchParams.get('q');
+        if (!query) return new Response(JSON.stringify({ error: "Missing parameter q or query" }), { status: 400 });
 
         const accessToken = await getTwitchAccessToken(env);
         const clientId = (env as any)?.TWITCH_CLIENT_ID || process.env.TWITCH_CLIENT_ID;
@@ -115,13 +115,90 @@ export default {
       }
     }
 
-    // --- 🏴‍☠️ ROUTE B: DEEP TWO-STEP FITGIRL REPACK SCRAPER ---
+    // --- 🎬 ROUTE B: TMDB DUAL-FALLBACK MOVIE SEARCH PROXY ---
+    if (url.pathname === '/api/search-movies') {
+      try {
+        const query = url.searchParams.get('query') || url.searchParams.get('q');
+        if (!query) return new Response(JSON.stringify({ error: "Missing query parameters" }), { status: 400 });
+
+        const rawToken = (env as any)?.TMDB_ACCESS_TOKEN || process.env.TMDB_ACCESS_TOKEN;
+        const tmdbToken = rawToken ? String(rawToken).replace(/[\r\n"']/g, '').trim() : "";
+
+        if (!tmdbToken || tmdbToken.length < 10) {
+          return new Response(JSON.stringify({ error: "TMDb access token is unreadable or missing from your environment files." }), { status: 500 });
+        }
+
+        let tmdbResponse: Response | null = null;
+        let fetchError: Error | null = null;
+
+        try {
+          tmdbResponse = await fetch(
+            `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`,
+            {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${tmdbToken}`,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+        } catch (err: any) {
+          fetchError = err;
+          console.warn("[TMDb Gateway Warning] Primary API endpoint down or blocked. Activating standard secondary mirror routing link...");
+        }
+
+        if (!tmdbResponse || !tmdbResponse.ok) {
+          try {
+            tmdbResponse = await fetch(
+              `https://api.tmdb.org/3/search/movie?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`,
+              {
+                method: 'GET',
+                headers: {
+                  'Authorization': `Bearer ${tmdbToken}`,
+                  'Accept': 'application/json',
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+          } catch (mirrorErr: any) {
+            return new Response(JSON.stringify({ 
+              error: `Network pipeline blocked across all routes. Primary err: ${fetchError?.message || "none"}, Mirror err: ${mirrorErr.message}` 
+            }), { status: 502 });
+          }
+        }
+
+        if (!tmdbResponse.ok) {
+          return new Response(JSON.stringify({ error: `Upstream error status code ${tmdbResponse.status}` }), { status: tmdbResponse.status });
+        }
+
+        const data = await tmdbResponse.json();
+        const polishedMovies = (data.results || []).slice(0, 6).map((movie: any) => {
+          return {
+            title: movie.title,
+            coverUrl: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "",
+            year: movie.release_date ? new Date(movie.release_date).getFullYear() : undefined,
+            description: movie.overview || "No synopsis cataloged in archives.",
+            genres: ["Cinema"]
+          };
+        });
+
+        return new Response(JSON.stringify(polishedMovies), { 
+          status: 200, 
+          headers: { "content-type": "application/json" } 
+        });
+
+      } catch (error: any) {
+        return new Response(JSON.stringify({ error: `Server block failure: ${error.message}` }), { status: 500 });
+      }
+    }
+
+    // --- 🏴‍☠️ ROUTE C: DEEP TWO-STEP FITGIRL REPACK SCRAPER ---
     if (url.pathname === '/api/scrape-repack') {
       try {
         const titleQuery = url.searchParams.get('title');
         if (!titleQuery) return new Response(JSON.stringify({ error: "Missing title parameter" }), { status: 400 });
 
-        // STEP 1: Query FitGirl's internal WordPress search layout loop
         const fitgirlSearchUrl = `https://fitgirl-repacks.site/?s=${encodeURIComponent(titleQuery)}`;
         const searchResponse = await fetch(fitgirlSearchUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
@@ -130,7 +207,6 @@ export default {
         if (!searchResponse.ok) throw new Error("FitGirl site search loop blocked or timed out");
         const searchHtml = await searchResponse.text();
 
-        // Regex to extract the first matching post's direct article URL page link
         const entryTitleRegex = /<h1 class="entry-title"><a href="([^"]+)"/g;
         const articleLinks = [...searchHtml.matchAll(entryTitleRegex)].map(l => l[1]);
 
@@ -138,7 +214,6 @@ export default {
           return new Response(JSON.stringify({ found: false }), { status: 200, headers: { "content-type": "application/json" } });
         }
 
-        // STEP 2: Follow the link into the specific post page to find the deep embedded magnet content
         const targetPostUrl = articleLinks[0];
         const postResponse = await fetch(targetPostUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
@@ -147,7 +222,6 @@ export default {
         if (!postResponse.ok) throw new Error("Failed to follow target repack article details link");
         const postHtml = await postResponse.text();
 
-        // Parse deep magnet matches out of the main post wrapper content fields
         const magnetRegex = /href="(magnet:\?xt=urn:btih:[^"]+)"/g;
         const deepMagnets = [...postHtml.matchAll(magnetRegex)].map(m => m[1]);
 
@@ -166,7 +240,7 @@ export default {
       }
     }
 
-    // --- 🗄️ ROUTE C: FETCH MEDIA ITEMS FROM DATABASE COLLECTIONS ---
+    // --- 🗄️ ROUTE D: FETCH MEDIA ITEMS FROM DATABASE COLLECTIONS ---
     if (url.pathname === '/api/vault' && request.method === 'GET') {
       try {
         const { db } = await connectToDatabase();
@@ -180,7 +254,7 @@ export default {
       }
     }
 
-    // --- 💾 ROUTE D: PERSIST NEW ITEM ENTRY TO DATABASE COLLECTION ---
+    // --- 💾 ROUTE E: PERSIST NEW ITEM ENTRY TO DATABASE COLLECTION ---
     if (url.pathname === '/api/vault' && request.method === 'POST') {
       try {
         const { db } = await connectToDatabase();
@@ -202,7 +276,7 @@ export default {
       }
     }
 
-    // --- 🗑️ ROUTE E: CLEAN REMOVAL HANDLER INTERCEPTOR ---
+    // --- 🗑️ ROUTE F: CLEAN REMOVAL HANDLER INTERCEPTOR ---
     if (url.pathname === '/api/vault' && request.method === 'DELETE') {
       try {
         const { db } = await connectToDatabase();

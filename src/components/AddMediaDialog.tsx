@@ -45,9 +45,9 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
   const reset = () => {
     setStep("search");
     setQuery(""); setResults([]); setScrapedData(null);
-    setTitle(""); setCoverUrl(""); setDescription(""); setTags(""); setRating("");
+    setTitle(""); setCoverUrl(""); setDescription(""); setTags("");
     setMagnet(""); setMirror(""); setNotes("");
-    setYear(""); setReview("");
+    setYear(""); setRating(""); setReview("");
   };
 
   const close = (v: boolean) => {
@@ -57,18 +57,37 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
 
   const runSearch = async () => {
     if (!query.trim()) return;
+    loading || setQuery(query);
     setLoading(true);
     try {
-      const r = await searchGameMetadata(query);
-      if (r && r.length > 0) {
-        setResults(r);
+      if (kind === "game") {
+        const r = await searchGameMetadata(query);
+        if (r && r.length > 0) {
+          setResults(r);
+        } else {
+          setResults([]);
+          toast.message("No results found — try another title string");
+        }
       } else {
-        setResults([]);
-        toast.message("No results found — try another title string");
+        const response = await fetch(`/api/search-movies?query=${encodeURIComponent(query)}`);
+        
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({ error: "Server structural breakdown" }));
+          throw new Error(body.error || `HTTP Status ${response.status}`);
+        }
+        
+        const data = await response.json();
+        if (data && data.length > 0) {
+          setResults(data);
+        } else {
+          setResults([]);
+          toast.message("No cinematic results found — verify movie title");
+        }
       }
-    } catch {
-      toast.error("Search gateway timeout");
-    } finally {
+    } catch (err: any) {
+      toast.error(err.message || "Upstream query failure");
+      console.error("Datalink operational error:", err);
+    } bits: {
       setLoading(false);
     }
   };
@@ -107,7 +126,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
     if (scrapedData?.found && scrapedData.magnet) {
       setMagnet(scrapedData.magnet);
       setMirror(scrapedData.pageUrl || "");
-      toast.success("Magnet and download mirror links auto-filled!");
+      toast.success("Magnet and download mirror links successfully auto-filled!");
     }
   };
 
@@ -142,7 +161,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
       <DialogContent className="max-w-2xl bg-surface border-border max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display tracking-widest uppercase text-primary">
-            {step === "search" ? `Find ${kind === "game" ? "Game via IGDB" : "Movie"}` : "Confirm Details"}
+            {step === "search" ? `Find ${kind === "game" ? "Game via IGDB" : "Movie via TMDb"}` : "Confirm Details"}
           </DialogTitle>
           <DialogDescription>
             {step === "search"
@@ -207,9 +226,9 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
             {kind === "game" && (
               <div className="p-3 rounded-lg border border-border bg-background/50 flex items-center justify-between gap-4">
                 <div className="space-y-0.5">
-                  <div className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">FitGirl Scraper</div>
+                  <div className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">FitGirl Deep Downloader Scan</div>
                   <div className="text-xs text-muted-foreground">
-                    {scrapingRepack ? "Parsing post text..." : scrapedData?.found ? "Verified variant located!" : "No automatic repack index match found."}
+                    {scrapingRepack ? "Following deep links and parsing post text..." : scrapedData?.found ? "Verified release matches located!" : "No automatic repack index match found."}
                   </div>
                 </div>
                 {scrapingRepack && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
@@ -233,7 +252,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
                 <Field label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
                 <Field label="Cover image URL"><Input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} /></Field>
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="Tags"><Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="RPG, Action" /></Field>
+                  <Field label="Tags"><Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder={kind === "game" ? "RPG, Action" : "Sci-Fi, Thriller"} /></Field>
                   <Field label="Rating (e.g. 9/10)"><Input value={rating} onChange={(e) => setRating(e.target.value)} placeholder="10/10" /></Field>
                 </div>
               </div>
