@@ -1,14 +1,12 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-export type GameStatus = "Playing" | "Backlog" | "Mastered";
-
 export interface Game {
   id: string;
   title: string;
   coverUrl: string;
   description: string;
   tags: string[];
-  status: GameStatus;
+  rating: string; // Replaced status tracking with standard rating strings
   magnet: string;
   mirrorUrl: string;
   notes: string;
@@ -112,7 +110,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // --- 🗑️ SYNCHRONIZED REMOVAL DATA METHODS ---
   const removeGame = async (id: string) => {
     try {
       const res = await fetch("/api/vault", {

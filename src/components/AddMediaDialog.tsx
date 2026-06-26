@@ -4,8 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useVault, type GameStatus } from "@/lib/vault-store";
+import { useVault } from "@/lib/vault-store";
 import { searchGameMetadata } from "@/lib/wiki-search";
 import { toast } from "sonner";
 import { Search, Loader2, ImageOff, ChevronLeft, Download } from "lucide-react";
@@ -32,24 +31,23 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
   const [coverUrl, setCoverUrl] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
+  const [rating, setRating] = useState("");
 
   // Game extras
-  const [status, setStatus] = useState<GameStatus>("Backlog");
   const [magnet, setMagnet] = useState("");
   const [mirror, setMirror] = useState("");
   const [notes, setNotes] = useState("");
 
   // Movie extras
   const [year, setYear] = useState("");
-  const [rating, setRating] = useState("");
   const [review, setReview] = useState("");
 
   const reset = () => {
     setStep("search");
     setQuery(""); setResults([]); setScrapedData(null);
-    setTitle(""); setCoverUrl(""); setDescription(""); setTags("");
-    setStatus("Backlog"); setMagnet(""); setMirror(""); setNotes("");
-    setYear(""); setRating(""); setReview("");
+    setTitle(""); setCoverUrl(""); setDescription(""); setTags(""); setRating("");
+    setMagnet(""); setMirror(""); setNotes("");
+    setYear(""); setReview("");
   };
 
   const close = (v: boolean) => {
@@ -94,7 +92,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
           if (resJson.found) {
             toast.success("FitGirl repack located automatically!");
           } else {
-            toast.message("No repack match on FitGirl. Entry set to manual link configuration.");
+            toast.message("No repack match on FitGirl.");
           }
         }
       } catch (err) {
@@ -109,7 +107,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
     if (scrapedData?.found && scrapedData.magnet) {
       setMagnet(scrapedData.magnet);
       setMirror(scrapedData.pageUrl || "");
-      toast.success("Magnet and download mirror links successfully auto-filled!");
+      toast.success("Magnet and download mirror links auto-filled!");
     }
   };
 
@@ -125,7 +123,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
     if (kind === "game") {
       addGame({
         title, coverUrl, description, tags: tagList,
-        status, magnet, mirrorUrl: mirror, notes,
+        rating, magnet, mirrorUrl: mirror, notes,
       });
       toast.success("Game archived to Vault");
     } else {
@@ -155,10 +153,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
 
         {step === "search" && (
           <div className="space-y-4">
-            <form
-              onSubmit={(e) => { e.preventDefault(); runSearch(); }}
-              className="flex gap-2"
-            >
+            <form onSubmit={(e) => { e.preventDefault(); runSearch(); }} className="flex gap-2">
               <Input
                 autoFocus
                 placeholder={kind === "game" ? "e.g. Elden Ring" : "e.g. Mulholland Drive"}
@@ -197,10 +192,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
               </div>
             )}
 
-            <button
-              onClick={skipToManual}
-              className="text-xs text-muted-foreground hover:text-primary underline underline-offset-4"
-            >
+            <button onClick={skipToManual} className="text-xs text-muted-foreground hover:text-primary underline underline-offset-4">
               Can't find it? Add manually →
             </button>
           </div>
@@ -215,9 +207,9 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
             {kind === "game" && (
               <div className="p-3 rounded-lg border border-border bg-background/50 flex items-center justify-between gap-4">
                 <div className="space-y-0.5">
-                  <div className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">FitGirl Deep Downloader Scan</div>
+                  <div className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">FitGirl Scraper</div>
                   <div className="text-xs text-muted-foreground">
-                    {scrapingRepack ? "Following deep links and parsing post text..." : scrapedData?.found ? "Verified release matches located!" : "No automatic repack index match found."}
+                    {scrapingRepack ? "Parsing post text..." : scrapedData?.found ? "Verified variant located!" : "No automatic repack index match found."}
                   </div>
                 </div>
                 {scrapingRepack && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
@@ -240,7 +232,10 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
               <div className="flex-1 space-y-2">
                 <Field label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
                 <Field label="Cover image URL"><Input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} /></Field>
-                <Field label="Tags (comma separated)"><Input value={tags} onChange={(e) => setTags(e.target.value)} /></Field>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Tags"><Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="RPG, Action" /></Field>
+                  <Field label="Rating (e.g. 9/10)"><Input value={rating} onChange={(e) => setRating(e.target.value)} placeholder="10/10" /></Field>
+                </div>
               </div>
             </div>
 
@@ -248,16 +243,6 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
 
             {kind === "game" ? (
               <>
-                <Field label="Status">
-                  <Select value={status} onValueChange={(v) => setStatus(v as GameStatus)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Playing">Playing</SelectItem>
-                      <SelectItem value="Backlog">Backlog</SelectItem>
-                      <SelectItem value="Mastered">Mastered</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
                 <Field label="Magnet link"><Input value={magnet} onChange={(e) => setMagnet(e.target.value)} placeholder="magnet:?xt=urn:btih:..." /></Field>
                 <Field label="Direct mirror URL"><Input value={mirror} onChange={(e) => setMirror(e.target.value)} placeholder="https://..." /></Field>
                 <Field label="Personal setup notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} /></Field>
@@ -266,7 +251,6 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Year"><Input type="number" value={year} onChange={(e) => setYear(e.target.value)} /></Field>
-                  <Field label="Rating (e.g. 8/10)"><Input value={rating} onChange={(e) => setRating(e.target.value)} /></Field>
                 </div>
                 <Field label="Personal review"><Textarea value={review} onChange={(e) => setReview(e.target.value)} rows={3} /></Field>
               </>
