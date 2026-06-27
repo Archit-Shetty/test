@@ -1,15 +1,18 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
+export type GameStatus = "Playing" | "Backlog" | "Mastered";
+
 export interface Game {
   id: string;
   title: string;
   coverUrl: string;
   description: string;
   tags: string[];
-  rating: string; // Replaced status tracking with standard rating strings
+  rating: string;
   magnet: string;
   mirrorUrl: string;
   notes: string;
+  themeAudioUrl?: string; // 🎧 Theme Audio Stream Link Anchor
 }
 
 export interface Movie {
@@ -22,6 +25,7 @@ export interface Movie {
   review: string;
   rating: string;
   loggedAt: string;
+  themeAudioUrl?: string; // 🎧 Theme Audio Stream Link Anchor
 }
 
 export interface Playlist {

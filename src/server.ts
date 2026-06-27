@@ -115,7 +115,7 @@ export default {
       }
     }
 
-    // --- 🎬 ROUTE B: TMDB DUAL-FALLBACK MOVIE SEARCH PROXY ---
+// --- 🎬 ROUTE B: TMDB DUAL-FALLBACK MOVIE SEARCH PROXY ---
     if (url.pathname === '/api/search-movies') {
       try {
         const query = url.searchParams.get('query') || url.searchParams.get('q');
@@ -125,8 +125,17 @@ export default {
         const tmdbToken = rawToken ? String(rawToken).replace(/[\r\n"']/g, '').trim() : "";
 
         if (!tmdbToken || tmdbToken.length < 10) {
-          return new Response(JSON.stringify({ error: "TMDb access token is unreadable or missing from your environment files." }), { status: 500 });
+          return new Response(JSON.stringify({ error: "TMDb access token is unreadable or missing from environment." }), { status: 500 });
         }
+
+        // 🏷️ TMDb Static Genre Dictionary Matrix
+        const TMDB_GENRES: Record<number, string> = {
+          28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy",
+          80: "Crime", 99: "Documentary", 18: "Drama", 10751: "Family",
+          14: "Fantasy", 36: "History", 27: "Horror", 10402: "Music",
+          9648: "Mystery", 10749: "Romance", 878: "Sci-Fi", 10770: "TV Movie",
+          53: "Thriller", 10752: "War", 37: "Western"
+        };
 
         let tmdbResponse: Response | null = null;
         let fetchError: Error | null = null;
@@ -145,7 +154,6 @@ export default {
           );
         } catch (err: any) {
           fetchError = err;
-          console.warn("[TMDb Gateway Warning] Primary API endpoint down or blocked. Activating standard secondary mirror routing link...");
         }
 
         if (!tmdbResponse || !tmdbResponse.ok) {
@@ -162,24 +170,27 @@ export default {
               }
             );
           } catch (mirrorErr: any) {
-            return new Response(JSON.stringify({ 
-              error: `Network pipeline blocked across all routes. Primary err: ${fetchError?.message || "none"}, Mirror err: ${mirrorErr.message}` 
-            }), { status: 502 });
+            return new Response(JSON.stringify({ error: "Network pipeline blocked" }), { status: 502 });
           }
         }
 
         if (!tmdbResponse.ok) {
-          return new Response(JSON.stringify({ error: `Upstream error status code ${tmdbResponse.status}` }), { status: tmdbResponse.status });
+          return new Response(JSON.stringify({ error: `Upstream error status ${tmdbResponse.status}` }), { status: tmdbResponse.status });
         }
 
         const data = await tmdbResponse.json();
         const polishedMovies = (data.results || []).slice(0, 6).map((movie: any) => {
+          // Look up the matching strings from the genre_ids array returned by TMDb
+          const resolvedGenres = movie.genre_ids && movie.genre_ids.length > 0
+            ? movie.genre_ids.map((id: number) => TMDB_GENRES[id]).filter(Boolean)
+            : ["Cinema"];
+
           return {
             title: movie.title,
             coverUrl: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "",
             year: movie.release_date ? new Date(movie.release_date).getFullYear() : undefined,
             description: movie.overview || "No synopsis cataloged in archives.",
-            genres: ["Cinema"]
+            genres: resolvedGenres // Now returns full genre name arrays!
           };
         });
 
@@ -189,7 +200,38 @@ export default {
         });
 
       } catch (error: any) {
-        return new Response(JSON.stringify({ error: `Server block failure: ${error.message}` }), { status: 500 });
+        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+      }
+    }
+
+    // --- 🎵 ROUTE C: FAILSAFE OPEN THEME SOUNDTRACK AUDIO LOOKUPS ---
+    if (url.pathname === '/api/search-tracks') {
+      try {
+        const query = url.searchParams.get('query') || url.searchParams.get('q');
+        if (!query) return new Response(JSON.stringify({ error: "Missing query parameter" }), { status: 400 });
+
+        const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=5`;
+        const response = await fetch(searchUrl);
+        
+        if (!response.ok) throw new Error("Audio repository gateway issue");
+        const json = await response.json();
+
+        const formattedTracks = (json.results || []).map((track: any) => ({
+          trackId: track.trackId,
+          title: track.trackName,
+          artist: track.artistName,
+          album: track.collectionName,
+          // Pristine, high-quality 30-second preview audio streaming source
+          previewUrl: track.previewUrl,
+          thumbnail: track.artworkUrl60
+        }));
+
+        return new Response(JSON.stringify(formattedTracks), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      } catch (error: any) {
+        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
       }
     }
 

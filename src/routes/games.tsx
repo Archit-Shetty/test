@@ -5,8 +5,7 @@ import { AddMediaDialog } from "@/components/AddMediaDialog";
 import { useVault, type Game } from "@/lib/vault-store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Copy, ExternalLink, Check, Gamepad2, Plus, ImageOff, Trash2, ArrowLeft } from "lucide-react";
+import { Copy, ExternalLink, Check, Gamepad2, Plus, ImageOff, Trash2, ArrowLeft, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/games")({
@@ -18,6 +17,50 @@ export const Route = createFileRoute("/games")({
   }),
   component: GamesPage,
 });
+
+// 🎧 Centralized player reference to seamlessly manage crossing fades and prevent overlapping audio streams
+let globalThemeAudioInstance: HTMLAudioElement | null = null;
+
+function playInstantThemePlayer(url: string | undefined) {
+  if (globalThemeAudioInstance) {
+    globalThemeAudioInstance.pause();
+    globalThemeAudioInstance = null;
+  }
+  if (!url) return;
+
+  const audio = new Audio(url);
+  audio.volume = 0.0; // Start at full silence for a clean fade-in sequence
+  audio.play().catch(() => console.log("Interactivity audio click interaction token required"));
+  globalThemeAudioInstance = audio;
+
+  // Smoothly scale audio gain up safely behind layout effects over 1 second
+  let currentVolume = 0;
+  const fadeInterval = setInterval(() => {
+    if (!globalThemeAudioInstance || globalThemeAudioInstance !== audio) {
+      clearInterval(fadeInterval);
+      return;
+    }
+    currentVolume = Math.min(currentVolume + 0.05, 0.28); // Lock ambient backplane layer at 28% max gain volume
+    audio.volume = currentVolume;
+    if (currentVolume >= 0.28) clearInterval(fadeInterval);
+  }, 50);
+
+  // Auto fade-out and stop track cleanly after exactly 15 seconds
+  setTimeout(() => {
+    if (globalThemeAudioInstance === audio) {
+      let fadeOutVol = audio.volume;
+      const fadeOutInterval = setInterval(() => {
+        fadeOutVol = Math.max(fadeOutVol - 0.04, 0);
+        if (audio) audio.volume = fadeOutVol;
+        if (fadeOutVol <= 0) {
+          clearInterval(fadeOutInterval);
+          audio.pause();
+          if (globalThemeAudioInstance === audio) globalThemeAudioInstance = null;
+        }
+      }, 50);
+    }
+  }, 15000);
+}
 
 function GamesPage() {
   const { games, removeGame } = useVault();
@@ -44,7 +87,7 @@ function GamesPage() {
     }
   };
 
-  // 🚀 PIXEL-PERFECT DIRECT FLIGHT MATCHING ENGINE
+  // 🚀 PIXEL-PERFECT DIRECT FLIGHT MATCHING ENGINE + INTEGRATED AUDIO TRIGGER
   const handleGameSelect = (game: Game, cardElement: HTMLDivElement) => {
     setSelected(game);
     
@@ -66,6 +109,11 @@ function GamesPage() {
 
     // 2. Mount full view panel silently behind layers to render the landing placeholder destination
     setShowFullView(true);
+
+    // 🎧 ACTIVATE SOUNDTRACK SNAPSHOT ON CLICK INSTANTLY (Matches Movie functionality)
+    if (game.themeAudioUrl) {
+      playInstantThemePlayer(game.themeAudioUrl);
+    }
 
     // 3. Wait exactly one frame for DOM layout pass engine to paint the target ref node
     requestAnimationFrame(() => {
@@ -96,10 +144,25 @@ function GamesPage() {
   };
 
   const handleBackToLounge = () => {
+    // Stop soundtrack cleanly when hitting back button to exit detailed screen container
+    if (globalThemeAudioInstance) {
+      globalThemeAudioInstance.pause();
+      globalThemeAudioInstance = null;
+    }
     setShowFullView(false);
     setSelected(null);
     setFlyStyle({});
   };
+
+  // Ensure active players clean up when tearing down component tree paths
+  useEffect(() => {
+    return () => {
+      if (globalThemeAudioInstance) {
+        globalThemeAudioInstance.pause();
+        globalThemeAudioInstance = null;
+      }
+    };
+  }, []);
 
   const getRatingGlowClass = (ratingStr: string) => {
     if (!ratingStr) return "group-hover:shadow-[0_0_25px_rgba(168,85,247,0.5)] border-white/10";
@@ -173,7 +236,7 @@ function GamesPage() {
               {/* Back Button */}
               <button 
                 onClick={handleBackToLounge}
-                className="absolute top-6 left-6 flex items-center gap-2 text-xs font-display tracking-widest text-zinc-400 hover:text-primary transition-colors group uppercase"
+                className="absolute top-6 left-6 flex items-center gap-2 text-xs font-display tracking-widest text-zinc-400 hover:text-primary transition-colors group uppercase border-none bg-transparent outline-none cursor-pointer"
               >
                 <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /> back to lounge
               </button>
@@ -202,6 +265,11 @@ function GamesPage() {
                       {selected.rating && (
                         <span className="px-2 py-0.5 text-xs font-display font-black tracking-wider bg-gradient-to-r from-pink-500 to-cyan-500 text-white rounded-md shadow-md shadow-pink-500/10">
                           ★ SCORE: {selected.rating}
+                        </span>
+                      )}
+                      {selected.themeAudioUrl && (
+                        <span className="text-pink-400 text-[10px] font-mono tracking-widest uppercase flex items-center gap-1.5 animate-pulse bg-pink-950/30 border border-pink-500/20 px-2 py-0.5 rounded">
+                          <Volume2 className="h-3 w-3" /> Audio Linked
                         </span>
                       )}
                     </div>
@@ -319,6 +387,13 @@ function HolographicTiltCard({ game, onSelect, glowClass, hidden }: { game: Game
           }}
           className="absolute inset-0 pointer-events-none z-20"
         />
+
+        {/* Floating Indicator for active track content sets */}
+        {game.themeAudioUrl && (
+          <div className="absolute top-2 right-2 z-30 p-1 bg-black/60 backdrop-blur-md rounded border border-white/5 text-pink-400 opacity-60 group-hover:opacity-100 transition-opacity">
+            <Volume2 className="h-3 w-3" />
+          </div>
+        )}
         
         {game.rating && (
           <div className="absolute bottom-1.5 right-1.5 z-10">

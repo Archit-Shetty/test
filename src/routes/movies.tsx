@@ -5,8 +5,7 @@ import { AddMediaDialog } from "@/components/AddMediaDialog";
 import { useVault, type Movie } from "@/lib/vault-store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Copy, ExternalLink, Check, Film, Plus, ImageOff, Trash2, ArrowLeft, Calendar } from "lucide-react";
+import { ImageOff, Trash2, ArrowLeft, Calendar, Film, Plus, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/movies")({
@@ -18,6 +17,50 @@ export const Route = createFileRoute("/movies")({
   }),
   component: MoviesPage,
 });
+
+// 🎧 Centralized player reference to seamlessly manage crossing fades and prevent overlapping audio streams
+let globalMovieAudioInstance: HTMLAudioElement | null = null;
+
+function playInstantMovieTheme(url: string | undefined) {
+  if (globalMovieAudioInstance) {
+    globalMovieAudioInstance.pause();
+    globalMovieAudioInstance = null;
+  }
+  if (!url) return;
+
+  const audio = new Audio(url);
+  audio.volume = 0.0; // Start at full silence for a clean fade-in sequence
+  audio.play().catch(() => console.log("User interaction context token required to fire media"));
+  globalMovieAudioInstance = audio;
+
+  // Smoothly scale audio gain up to 30% volume over 1 second
+  let currentVol = 0;
+  const fadeIn = setInterval(() => {
+    if (!globalMovieAudioInstance || globalMovieAudioInstance !== audio) {
+      clearInterval(fadeIn);
+      return;
+    }
+    currentVol = Math.min(currentVol + 0.05, 0.3);
+    audio.volume = currentVol;
+    if (currentVol >= 0.3) clearInterval(fadeIn);
+  }, 50);
+
+  // Auto fade-out and stop track cleanly after exactly 15 seconds
+  setTimeout(() => {
+    if (globalMovieAudioInstance === audio) {
+      let fadeOutVol = audio.volume;
+      const fadeOut = setInterval(() => {
+        fadeOutVol = Math.max(fadeOutVol - 0.04, 0);
+        if (audio) audio.volume = fadeOutVol;
+        if (fadeOutVol <= 0) {
+          clearInterval(fadeOut);
+          audio.pause();
+          if (globalMovieAudioInstance === audio) globalMovieAudioInstance = null;
+        }
+      }, 50);
+    }
+  }, 15000);
+}
 
 function MoviesPage() {
   const { movies, removeMovie } = useVault();
@@ -58,6 +101,9 @@ function MoviesPage() {
     setIsProjecting(true);
     setShowFullView(true);
 
+    // 🎧 ACTIVATE SOUNDTRACK SNAPSHOT ON CLICK INSTANTLY
+    playInstantMovieTheme(movie.themeAudioUrl);
+
     requestAnimationFrame(() => {
       setTimeout(() => {
         const targetRef = targetImageRef.current;
@@ -83,10 +129,25 @@ function MoviesPage() {
   };
 
   const handleBackToLounge = () => {
+    // Stop soundtrack when hitting back button to exit detailed screen container
+    if (globalMovieAudioInstance) {
+      globalMovieAudioInstance.pause();
+      globalMovieAudioInstance = null;
+    }
     setShowFullView(false);
     setSelected(null);
     setFlyStyle({});
   };
+
+  // Ensure active players clean up when tearing down components
+  useEffect(() => {
+    return () => {
+      if (globalMovieAudioInstance) {
+        globalMovieAudioInstance.pause();
+        globalMovieAudioInstance = null;
+      }
+    };
+  }, []);
 
   return (
     <VaultShell>
@@ -149,7 +210,7 @@ function MoviesPage() {
               
               <button 
                 onClick={handleBackToLounge}
-                className="absolute top-6 left-6 flex items-center gap-2 text-xs font-display tracking-widest text-zinc-400 hover:text-cyan-400 transition-colors group uppercase"
+                className="absolute top-6 left-6 flex items-center gap-2 text-xs font-display tracking-widest text-zinc-400 hover:text-cyan-400 transition-colors group uppercase border-none bg-transparent outline-none cursor-pointer"
               >
                 <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /> exit theatre
               </button>
@@ -182,6 +243,11 @@ function MoviesPage() {
                       {selected.rating && (
                         <span className="px-2 py-0.5 text-xs font-display font-black tracking-wider bg-gradient-to-r from-cyan-400 to-blue-600 text-white rounded-md shadow-md shadow-cyan-500/10">
                           ★ SCORE: {selected.rating}
+                        </span>
+                      )}
+                      {selected.themeAudioUrl && (
+                        <span className="text-cyan-400 text-[10px] font-mono tracking-widest uppercase flex items-center gap-1.5 animate-pulse bg-cyan-950/30 border border-cyan-500/20 px-2 py-0.5 rounded">
+                          <Volume2 className="h-3 w-3" /> Audio Linked
                         </span>
                       )}
                     </div>
@@ -287,6 +353,13 @@ function TheatreSpotlightCard({ movie, onSelect, glowClass, hidden }: { movie: M
           }}
           className="absolute inset-0 pointer-events-none z-20"
         />
+
+        {/* Floating Indicator for active track content sets */}
+        {movie.themeAudioUrl && (
+          <div className="absolute top-2 right-2 z-30 p-1 bg-black/60 backdrop-blur-md rounded border border-white/5 text-cyan-400 opacity-60 group-hover:opacity-100 transition-opacity">
+            <Volume2 className="h-3 w-3" />
+          </div>
+        )}
         
         {movie.rating && (
           <div className="absolute bottom-1.5 right-1.5 z-10">
@@ -303,9 +376,6 @@ function TheatreSpotlightCard({ movie, onSelect, glowClass, hidden }: { movie: M
 
 /**
  * 📽️ INTERACTIVE PROJECTOR BACKGROUND COMPONENT
- * Renders an active cinema environment. The lightcone originates from top-center 
- * and pans across the screen layout to directly follow the user's cursor vectors,
- * dynamically texturing volumetric smoke and high-density silver halide dust particles.
  */
 function InteractiveProjectorBackground() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -321,10 +391,8 @@ function InteractiveProjectorBackground() {
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
 
-    // Default mouse coordinates initialization to center viewport frame
     mouseRef.current = { x: width / 2, y: height * 0.7 };
 
-    // Initialize cinema projector dust motes
     const motes: Array<{ x: number; y: number; vx: number; vy: number; radius: number; baseAlpha: number; phase: number }> = [];
     const totalMotes = 65;
 
@@ -333,7 +401,7 @@ function InteractiveProjectorBackground() {
         x: Math.random() * width,
         y: Math.random() * height,
         vx: (Math.random() - 0.5) * 0.3,
-        vy: -(Math.random() * 0.2 + 0.1), // Float up towards warmth
+        vy: -(Math.random() * 0.2 + 0.1),
         radius: Math.random() * 1.5 + 0.5,
         baseAlpha: Math.random() * 0.5 + 0.1,
         phase: Math.random() * Math.PI * 2
@@ -358,19 +426,16 @@ function InteractiveProjectorBackground() {
     const render = () => {
       tick += 0.005;
       
-      // Clean deep dark backing plate layout
       ctx.fillStyle = "#020105";
       ctx.fillRect(0, 0, width, height);
 
       const sourceX = width / 2;
-      const sourceY = -20; // Origin point of structural theater projector lamp element
+      const sourceY = -20; 
       const target = mouseRef.current;
 
-      // 1. 📽️ VOLUMETRIC PROJECTOR BEAM DRAWING
-      // Creates a sweeping cone out from the top-center directly to the user's mouse position
       const angle = Math.atan2(target.y - sourceY, target.x - sourceX);
       const coneLength = Math.max(width, height) * 1.2;
-      const coneSpread = 0.22; // Radians wide
+      const coneSpread = 0.22; 
 
       const leftAngle = angle - coneSpread;
       const rightAngle = angle + coneSpread;
@@ -381,17 +446,14 @@ function InteractiveProjectorBackground() {
       ctx.lineTo(sourceX + Math.cos(rightAngle) * coneLength, sourceY + Math.sin(rightAngle) * coneLength);
       ctx.closePath();
 
-      // Dual-gradient masking structure to simulate realistic volumetric lighting drop-off
       const lightGradient = ctx.createRadialGradient(sourceX, sourceY, 20, sourceX, sourceY, coneLength * 0.8);
-      lightGradient.addColorStop(0, "rgba(6, 182, 212, 0.18)"); // Neon cyan lamp core
-      lightGradient.addColorStop(0.3, "rgba(59, 130, 246, 0.06)"); // Deep movie blue bleed
+      lightGradient.addColorStop(0, "rgba(6, 182, 212, 0.18)"); 
+      lightGradient.addColorStop(0.3, "rgba(59, 130, 246, 0.06)"); 
       lightGradient.addColorStop(1, "rgba(0,0,0,0)");
 
       ctx.fillStyle = lightGradient;
       ctx.fill();
 
-      // 2. 💨 INTERACTIVE SMOKE EDDIES
-      // Layers procedural sinus-wave highlights across the beam vector paths
       ctx.save();
       ctx.globalCompositeOperation = "screen";
       for (let j = 1; j <= 3; j++) {
@@ -408,36 +470,29 @@ function InteractiveProjectorBackground() {
       }
       ctx.restore();
 
-      // 3. ✨ DUST MOTES DYNAMICS
-      // Only lights up particles that are physically inside the projector's light cone geometry path
       motes.forEach((m) => {
         m.x += m.vx;
         m.y += m.vy;
         m.phase += 0.01;
 
-        // Reset tracking positions if boundary loop limits trigger
         if (m.y < 0) { m.y = height; m.x = Math.random() * width; }
         if (m.x < 0) m.x = width;
         if (m.x > width) m.x = 0;
 
-        // Check math modeling boundaries to see if item intersects our polygon lightcone
         const moteAngle = Math.atan2(m.y - sourceY, m.x - sourceX);
         let diff = moteAngle - angle;
         
-        // Normalize radian deviations
         while (diff < -Math.PI) diff += Math.PI * 2;
         while (diff > Math.PI) diff -= Math.PI * 2;
 
         const isInsideCone = Math.abs(diff) < coneSpread;
         
-        // Compute brightness multiplier tracking if inside cone path or not
         const sineWaveAlpha = m.baseAlpha + Math.sin(m.phase) * 0.15;
         const targetAlpha = isInsideCone ? sineWaveAlpha : sineWaveAlpha * 0.12;
 
         ctx.beginPath();
         ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2);
         
-        // High intensity silver tint within lighting cones, dark blue ghosting elsewhere
         ctx.fillStyle = isInsideCone 
           ? `rgba(207, 250, 254, ${targetAlpha})`
           : `rgba(59, 130, 246, ${targetAlpha * 0.4})`;

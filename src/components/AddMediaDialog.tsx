@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useVault } from "@/lib/vault-store";
 import { searchGameMetadata } from "@/lib/wiki-search";
 import { toast } from "sonner";
-import { Search, Loader2, ImageOff, ChevronLeft, Download } from "lucide-react";
+import { Search, Loader2, ImageOff, ChevronLeft, Download, Music, Play, Square, Check } from "lucide-react";
 
 type Kind = "game" | "movie";
 
@@ -19,7 +19,7 @@ interface Props {
 
 export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
   const { addGame, addMovie } = useVault();
-  const [step, setStep] = useState<"search" | "details">("search");
+  const [step, setStep] = useState<"search" | "details" | "audio">("search");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [scrapingRepack, setScrapingRepack] = useState(false);
@@ -42,12 +42,22 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
   const [year, setYear] = useState("");
   const [review, setReview] = useState("");
 
+  // Theme audio fields
+  const [audioQuery, setAudioQuery] = useState("");
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [audioTracks, setAudioTracks] = useState<any[]>([]);
+  const [selectedAudioUrl, setSelectedAudioUrl] = useState("");
+  const [playingPreviewUrl, setPlayingPreviewUrl] = useState("");
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
   const reset = () => {
+    stopPreview();
     setStep("search");
     setQuery(""); setResults([]); setScrapedData(null);
-    setTitle(""); setCoverUrl(""); setDescription(""); setTags("");
+    setTitle(""); setCoverUrl(""); setDescription(""); setTags(""); setRating("");
     setMagnet(""); setMirror(""); setNotes("");
-    setYear(""); setRating(""); setReview("");
+    setYear(""); setReview("");
+    setAudioQuery(""); setAudioTracks([]); setSelectedAudioUrl("");
   };
 
   const close = (v: boolean) => {
@@ -55,40 +65,64 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
     if (!v) setTimeout(reset, 200);
   };
 
+  const stopPreview = () => {
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current = null;
+    }
+    setPlayingPreviewUrl("");
+  };
+
+  const handleTogglePreview = (url: string) => {
+    if (playingPreviewUrl === url) {
+      stopPreview();
+    } else {
+      stopPreview();
+      const audio = new Audio(url);
+      audio.volume = 0.4;
+      audio.play().catch(() => toast.error("Audio playback blocked"));
+      previewAudioRef.current = audio;
+      setPlayingPreviewUrl(url);
+      audio.onended = () => setPlayingPreviewUrl("");
+    }
+  };
+
   const runSearch = async () => {
     if (!query.trim()) return;
-    loading || setQuery(query);
     setLoading(true);
     try {
       if (kind === "game") {
         const r = await searchGameMetadata(query);
-        if (r && r.length > 0) {
-          setResults(r);
-        } else {
-          setResults([]);
-          toast.message("No results found — try another title string");
-        }
+        if (r && r.length > 0) setResults(r);
+        else { setResults([]); toast.message("No results found"); }
       } else {
         const response = await fetch(`/api/search-movies?query=${encodeURIComponent(query)}`);
-        
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({ error: "Server structural breakdown" }));
-          throw new Error(body.error || `HTTP Status ${response.status}`);
-        }
-        
+        if (!response.ok) throw new Error();
         const data = await response.json();
-        if (data && data.length > 0) {
-          setResults(data);
-        } else {
-          setResults([]);
-          toast.message("No cinematic results found — verify movie title");
-        }
+        if (data && data.length > 0) setResults(data);
+        else { setResults([]); toast.message("No cinematic results found"); }
       }
-    } catch (err: any) {
-      toast.error(err.message || "Upstream query failure");
-      console.error("Datalink operational error:", err);
-    } bits: {
+    } catch {
+      toast.error("Query timeout");
+    } finally {
       setLoading(false);
+    }
+  };
+
+  const runAudioSearch = async (forcedQuery?: string) => {
+    const targetQuery = forcedQuery || audioQuery;
+    if (!targetQuery.trim()) return;
+    setAudioLoading(true);
+    try {
+      const response = await fetch(`/api/search-tracks?query=${encodeURIComponent(targetQuery)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setAudioTracks(data);
+      }
+    } catch {
+      console.error("Audio link lookup issue");
+    } finally {
+      setAudioLoading(false);
     }
   };
 
@@ -108,14 +142,10 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
         if (repackRes.ok) {
           const resJson = await repackRes.json();
           setScrapedData(resJson);
-          if (resJson.found) {
-            toast.success("FitGirl repack located automatically!");
-          } else {
-            toast.message("No repack match on FitGirl.");
-          }
+          if (resJson.found) toast.success("FitGirl repack located automatically!");
         }
       } catch (err) {
-        console.error("Scraper cluster error:", err);
+        console.error(err);
       } finally {
         setScrapingRepack(false);
       }
@@ -126,158 +156,170 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
     if (scrapedData?.found && scrapedData.magnet) {
       setMagnet(scrapedData.magnet);
       setMirror(scrapedData.pageUrl || "");
-      toast.success("Magnet and download mirror links successfully auto-filled!");
+      toast.success("Magnet link auto-filled!");
     }
   };
 
-  const skipToManual = () => {
-    setScrapedData(null);
-    setTitle(query);
-    setStep("details");
+  const handleNextToAudio = () => {
+    if (!title.trim()) return toast.error("Title required");
+    // Seed initial audio text query with the selected media name
+    setAudioQuery(title);
+    setStep("audio");
+    runAudioSearch(title);
   };
 
   const save = () => {
-    if (!title.trim()) return toast.error("Title required");
     const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
     if (kind === "game") {
       addGame({
         title, coverUrl, description, tags: tagList,
         rating, magnet, mirrorUrl: mirror, notes,
+        themeAudioUrl: selectedAudioUrl // Committing soundtrack context url
       });
-      toast.success("Game archived to Vault");
+      toast.success("Game archived with Theme audio track!");
     } else {
       addMovie({
         title, coverUrl, description, tags: tagList,
         year: Number(year) || new Date().getFullYear(),
         rating, review,
+        themeAudioUrl: selectedAudioUrl // Committing soundtrack context url
       });
-      toast.success("Movie logged successfully");
+      toast.success("Movie logged with Theme audio track!");
     }
     close(false);
   };
+
+  useEffect(() => {
+    return () => stopPreview();
+  }, []);
 
   return (
     <Dialog open={open} onOpenChange={close}>
       <DialogContent className="max-w-2xl bg-surface border-border max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-display tracking-widest uppercase text-primary">
-            {step === "search" ? `Find ${kind === "game" ? "Game via IGDB" : "Movie via TMDb"}` : "Confirm Details"}
+          <DialogTitle className="font-display tracking-widest uppercase text-primary flex items-center gap-2">
+            {step === "audio" && <Music className="h-5 w-5 animate-pulse text-cyan-400" />}
+            {step === "search" ? `Find ${kind === "game" ? "Game via IGDB" : "Movie via TMDb"}` : step === "details" ? "Confirm Details" : "Sync Atmospheric Theme Track"}
           </DialogTitle>
           <DialogDescription>
-            {step === "search"
-              ? "Search the database metadata network index to automatically scrape high-res box graphics."
-              : "Edit your entry configurations before saving to your collections storage."}
+            {step === "search" && "Search database metadata network index to automatically scrape layouts."}
+            {step === "details" && "Edit your configuration variables before entering the audio pipeline."}
+            {step === "audio" && "Select an audio snippet that will trigger instantly whenever this item is clicked."}
           </DialogDescription>
         </DialogHeader>
 
         {step === "search" && (
           <div className="space-y-4">
             <form onSubmit={(e) => { e.preventDefault(); runSearch(); }} className="flex gap-2">
-              <Input
-                autoFocus
-                placeholder={kind === "game" ? "e.g. Elden Ring" : "e.g. Mulholland Drive"}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
+              <Input autoFocus placeholder={kind === "game" ? "e.g. Elden Ring" : "e.g. Mulholland Drive"} value={query} onChange={(e) => setQuery(e.target.value)} />
               <Button type="submit" disabled={loading || !query.trim()}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               </Button>
             </form>
-
             {results.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {results.map((r, index) => {
-                  const imageSrc = r.coverUrl || r.thumbnail;
-                  return (
-                    <button
-                      key={`${r.title}-${index}`}
-                      onClick={() => pick(r)}
-                      className="group text-left rounded-md border border-border bg-background hover:border-primary overflow-hidden transition-colors"
-                    >
-                      <div className="aspect-[2/3] bg-muted overflow-hidden relative">
-                        {imageSrc ? (
-                          <img src={imageSrc} alt={r.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
-                        ) : (
-                          <div className="flex items-center justify-center h-full text-muted-foreground"><ImageOff className="h-6 w-6" /></div>
-                        )}
-                      </div>
-                      <div className="p-2">
-                        <div className="text-xs font-medium leading-tight line-clamp-2">{r.title}</div>
-                        {r.year && <div className="text-[10px] text-muted-foreground mt-0.5">{r.year}</div>}
-                      </div>
-                    </button>
-                  );
-                })}
+                {results.map((r, index) => (
+                  <button key={`${r.title}-${index}`} onClick={() => pick(r)} className="group text-left rounded-md border border-border bg-background hover:border-primary overflow-hidden transition-colors">
+                    <div className="aspect-[2/3] bg-muted overflow-hidden relative">
+                      {r.coverUrl || r.thumbnail ? <img src={r.coverUrl || r.thumbnail} alt={r.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" /> : <div className="flex items-center justify-center h-full text-muted-foreground"><ImageOff className="h-6 w-6" /></div>}
+                    </div>
+                    <div className="p-2">
+                      <div className="text-xs font-medium leading-tight line-clamp-2">{r.title}</div>
+                      {r.year && <div className="text-[10px] text-muted-foreground mt-0.5">{r.year}</div>}
+                    </div>
+                  </button>
+                ))}
               </div>
             )}
-
-            <button onClick={skipToManual} className="text-xs text-muted-foreground hover:text-primary underline underline-offset-4">
-              Can't find it? Add manually →
-            </button>
+            <button onClick={() => { setScrapedData(null); setTitle(query); setStep("details"); }} className="text-xs text-muted-foreground hover:text-primary underline underline-offset-4">Add manually →</button>
           </div>
         )}
 
         {step === "details" && (
           <div className="space-y-4">
-            <button onClick={() => setStep("search")} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary">
-              <ChevronLeft className="h-3 w-3" /> back to search
-            </button>
-
-            {kind === "game" && (
+            <button onClick={() => setStep("search")} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><ChevronLeft className="h-3 w-3" /> back to search</button>
+            {kind === "game" && scrapedData?.found && (
               <div className="p-3 rounded-lg border border-border bg-background/50 flex items-center justify-between gap-4">
-                <div className="space-y-0.5">
-                  <div className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">FitGirl Deep Downloader Scan</div>
-                  <div className="text-xs text-muted-foreground">
-                    {scrapingRepack ? "Following deep links and parsing post text..." : scrapedData?.found ? "Verified release matches located!" : "No automatic repack index match found."}
-                  </div>
-                </div>
-                {scrapingRepack && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
-                {!scrapingRepack && scrapedData?.found && (
-                  <Button size="sm" variant="secondary" onClick={injectScrapedRepack} className="flex items-center gap-1.5 text-xs bg-primary text-primary-foreground hover:bg-primary/90">
-                    <Download className="h-3 w-3" /> Inject Magnet
-                  </Button>
-                )}
+                <div className="text-xs text-muted-foreground">Verified repack variant matched dynamically.</div>
+                <Button size="sm" onClick={injectScrapedRepack} className="flex items-center gap-1.5 text-xs bg-primary text-primary-foreground"><Download className="h-3 w-3" /> Inject Magnet</Button>
               </div>
             )}
-
             <div className="flex gap-4">
               <div className="w-28 shrink-0 aspect-[2/3] rounded-md border border-border bg-background overflow-hidden">
-                {coverUrl ? (
-                  <img src={coverUrl} alt={title} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="flex items-center justify-center h-full text-muted-foreground"><ImageOff className="h-6 w-6" /></div>
-                )}
+                {coverUrl ? <img src={coverUrl} alt={title} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-muted-foreground"><ImageOff className="h-6 w-6" /></div>}
               </div>
               <div className="flex-1 space-y-2">
                 <Field label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
                 <Field label="Cover image URL"><Input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} /></Field>
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="Tags"><Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder={kind === "game" ? "RPG, Action" : "Sci-Fi, Thriller"} /></Field>
-                  <Field label="Rating (e.g. 9/10)"><Input value={rating} onChange={(e) => setRating(e.target.value)} placeholder="10/10" /></Field>
+                  <Field label="Tags"><Input value={tags} onChange={(e) => setTags(e.target.value)} /></Field>
+                  <Field label="Rating"><Input value={rating} onChange={(e) => setRating(e.target.value)} /></Field>
                 </div>
               </div>
             </div>
-
             <Field label="Description"><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} /></Field>
-
             {kind === "game" ? (
               <>
-                <Field label="Magnet link"><Input value={magnet} onChange={(e) => setMagnet(e.target.value)} placeholder="magnet:?xt=urn:btih:..." /></Field>
-                <Field label="Direct mirror URL"><Input value={mirror} onChange={(e) => setMirror(e.target.value)} placeholder="https://..." /></Field>
+                <Field label="Magnet link"><Input value={magnet} onChange={(e) => setMagnet(e.target.value)} /></Field>
+                <Field label="Direct mirror URL"><Input value={mirror} onChange={(e) => setMirror(e.target.value)} /></Field>
                 <Field label="Personal setup notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} /></Field>
               </>
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Year"><Input type="number" value={year} onChange={(e) => setYear(e.target.value)} /></Field>
-                </div>
+                <div className="grid grid-cols-2 gap-3"><Field label="Year"><Input type="number" value={year} onChange={(e) => setYear(e.target.value)} /></Field></div>
                 <Field label="Personal review"><Textarea value={review} onChange={(e) => setReview(e.target.value)} rows={3} /></Field>
               </>
             )}
-
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" onClick={() => close(false)}>Cancel</Button>
-              <Button onClick={save} className="bg-primary text-primary-foreground hover:bg-primary/90">Save to Vault</Button>
+              <Button onClick={handleNextToAudio} className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold">Configure Audio Theme →</Button>
+            </div>
+          </div>
+        )}
+
+        {step === "audio" && (
+          <div className="space-y-4">
+            <button onClick={() => { stopPreview(); setStep("details"); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><ChevronLeft className="h-3 w-3" /> back to details</button>
+            
+            <form onSubmit={(e) => { e.preventDefault(); runAudioSearch(); }} className="flex gap-2">
+              <Input placeholder="Search song name, artist, track theme..." value={audioQuery} onChange={(e) => setAudioQuery(e.target.value)} />
+              <Button type="submit" disabled={audioLoading}>
+                {audioLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              </Button>
+            </form>
+
+            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+              {audioTracks.map((track) => {
+                const isSelected = selectedAudioUrl === track.previewUrl;
+                const isPlaying = playingPreviewUrl === track.previewUrl;
+                return (
+                  <div key={track.trackId} className={`flex items-center justify-between p-2.5 rounded-lg border transition-all duration-200 ${isSelected ? 'bg-cyan-500/10 border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)]' : 'bg-background border-border hover:border-zinc-700'}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <button onClick={() => handleTogglePreview(track.previewUrl)} type="button" className={`p-2 rounded-full shrink-0 flex items-center justify-center transition-colors ${isPlaying ? 'bg-red-500/20 text-red-400' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>
+                        {isPlaying ? <Square className="h-3.5 w-3.5 fill-current" /> : <Play className="h-3.5 w-3.5 fill-current ml-0.5" />}
+                      </button>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-zinc-100 truncate">{track.title}</div>
+                        <div className="text-[10px] text-zinc-400 truncate">{track.artist} • {track.album}</div>
+                      </div>
+                    </div>
+                    <Button size="sm" variant={isSelected ? "default" : "secondary"} onClick={() => setSelectedAudioUrl(track.previewUrl)} className={`text-xs h-8 px-3 ${isSelected ? 'bg-cyan-500 text-white hover:bg-cyan-600' : ''}`}>
+                      {isSelected ? <Check className="h-3.5 w-3.5 mr-1" /> : 'Select'}
+                    </Button>
+                  </div>
+                );
+              })}
+              {audioTracks.length === 0 && !audioLoading && (
+                <div className="text-center py-6 text-xs text-zinc-500">No tracks found. Type a query above to explore media audio lists.</div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-4 border-t border-white/5">
+              <button onClick={() => { setSelectedAudioUrl(""); save(); }} className="text-xs text-zinc-500 hover:text-zinc-400 underline uppercase tracking-wider">Skip track / Add without audio</button>
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={() => close(false)}>Cancel</Button>
+                <Button onClick={save} className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold uppercase tracking-wider text-xs">Save to Vault</Button>
+              </div>
             </div>
           </div>
         )}
