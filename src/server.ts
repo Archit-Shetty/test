@@ -115,7 +115,7 @@ export default {
       }
     }
 
-// --- 🎬 ROUTE B: TMDB DUAL-FALLBACK MOVIE SEARCH PROXY ---
+    // --- 🎬 ROUTE B: TMDB DUAL-FALLBACK MOVIE SEARCH PROXY ---
     if (url.pathname === '/api/search-movies') {
       try {
         const query = url.searchParams.get('query') || url.searchParams.get('q');
@@ -159,7 +159,7 @@ export default {
         if (!tmdbResponse || !tmdbResponse.ok) {
           try {
             tmdbResponse = await fetch(
-              `https://api.tmdb.org/3/search/movie?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`,
+              `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`,
               {
                 method: 'GET',
                 headers: {
@@ -204,7 +204,7 @@ export default {
       }
     }
 
-    // --- 🎵 ROUTE C: FAILSAFE OPEN THEME SOUNDTRACK AUDIO LOOKUPS ---
+    // --- 🎵 ROUTE C1: FAILSAFE OPEN THEME SOUNDTRACK AUDIO LOOKUPS ---
     if (url.pathname === '/api/search-tracks') {
       try {
         const query = url.searchParams.get('query') || url.searchParams.get('q');
@@ -235,7 +235,148 @@ export default {
       }
     }
 
-    // --- 🏴‍☠️ ROUTE C: DEEP TWO-STEP FITGIRL REPACK SCRAPER ---
+    // --- 🎵 ROUTE C2: PLAYLIST TRACK MODIFICATION HANDLER ---
+    if (url.pathname === '/api/vault/playlists/tracks' && request.method === 'POST') {
+      try {
+        const { db } = await connectToDatabase();
+        const body = await request.json();
+        const { playlistId, action, track, trackId } = body;
+
+        if (!playlistId) return new Response(JSON.stringify({ error: "Missing playlist identifier" }), { status: 400 });
+
+        if (action === "add") {
+          // Push a brand new song element into the playlist's track array storage
+          await db.collection("playlists").updateOne(
+            { id: playlistId },
+            { $push: { tracks: { ...track, trackId: Math.random().toString(36).slice(2, 10) } } } as any
+          );
+          return new Response(JSON.stringify({ success: true }), { status: 200 });
+        }
+
+        if (action === "remove") {
+          // Pull a song out of the playlist's track array layout natively via MongoDB query blocks casting as any to satisfy index definitions
+          await db.collection("playlists").updateOne(
+            { id: playlistId },
+            { $pull: { tracks: { trackId: trackId } } } as any
+          );
+          return new Response(JSON.stringify({ success: true }), { status: 200 });
+        }
+
+        return new Response(JSON.stringify({ error: "Invalid layout action string" }), { status: 400 });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+      }
+    }
+
+    // --- 🎵 ROUTE C3: SPOTIFY & YOUTUBE PLAYLIST IMPORTER PROXY ---
+    if (url.pathname === '/api/jukebox/import') {
+      try {
+        const playlistUrl = url.searchParams.get('url');
+        if (!playlistUrl) return new Response(JSON.stringify({ error: "Missing playlist source target url path" }), { status: 400 });
+
+        // 🟢 INTERCEPT PLATFORM A: SPOTIFY DIRECT INGESTION
+        if (playlistUrl.includes('spotify.com')) {
+          const playlistIdMatch = playlistUrl.match(/playlist\/([a-zA-Z0-9]+)/);
+          if (!playlistIdMatch) return new Response(JSON.stringify({ error: "Unreadable Spotify ID format" }), { status: 400 });
+          const playlistId = playlistIdMatch[1];
+
+          const clientId = (env as any)?.SPOTIFY_CLIENT_ID || process.env.SPOTIFY_CLIENT_ID;
+          const clientSecret = (env as any)?.SPOTIFY_CLIENT_SECRET || process.env.SPOTIFY_CLIENT_SECRET;
+
+          if (!clientId || !clientSecret) {
+            return new Response(JSON.stringify({ error: "Credentials missing inside .env configurations" }), { status: 500 });
+          }
+
+          // Automated client credential token signature handshake loop execution
+          const authRes = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Basic ' + btoa(`${clientId}:${clientSecret}`),
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: 'grant_type=client_credentials'
+          });
+          const authData = await authRes.json();
+          const token = authData.access_token;
+
+          // Fetch the tracks directly from Spotify catalog channels
+          const trackRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!trackRes.ok) return new Response(JSON.stringify({ error: "Upstream profile query denied" }), { status: 401 });
+          const spotData = await trackRes.json();
+
+          const importedPlaylist = {
+            name: spotData.name,
+            description: spotData.description || "Imported catalog mix.",
+            coverUrl: spotData.images?.[0]?.url || "",
+            sourceUrl: playlistUrl,
+            tracks: (spotData.tracks?.items || []).map((item: any) => ({
+              trackId: Math.random().toString(36).slice(2, 10),
+              title: item.track?.name || "Unknown title",
+              artist: item.track?.artists?.map((a: any) => a.name).join(', ') || "Unknown artist",
+              album: item.track?.album?.name || "Unknown Album",
+              coverUrl: item.track?.album?.images?.[0]?.url || "",
+              source: "spotify"
+            }))
+          };
+
+          return new Response(JSON.stringify(importedPlaylist), { status: 200, headers: { "content-type": "application/json" } });
+        }
+
+        // 🔴 INTERCEPT PLATFORM B: YOUTUBE MUSIC METADATA INGESTION
+        if (playlistUrl.includes('youtube.com') || playlistUrl.includes('youtu.be')) {
+          const ytListIdMatch = playlistUrl.match(/[&?]list=([^&]+)/);
+          if (!ytListIdMatch) return new Response(JSON.stringify({ error: "Missing identity parameter listing block context" }), { status: 400 });
+          const listId = ytListIdMatch[1];
+
+          // Querying via open metadata extraction blocks seamlessly without hitting authentication deadends
+          const ytScrapeRes = await fetch(`https://images${Math.floor(Math.random() * 3) + 1}-focus-opensocial.googleusercontent.com/gadgets/proxy?container=none&url=${encodeURIComponent(`https://www.youtube.com/playlist?list=${listId}`)}`);
+          const html = await ytScrapeRes.text();
+
+          // Regex arrays mapping structural script outputs injected inside YouTube document assets
+          const cleanScriptMatch = html.match(/var ytInitialData = ({.*?});/);
+          if (!cleanScriptMatch) return new Response(JSON.stringify({ error: "Target data cluster array parsing blocked" }), { status: 500 });
+          const ytJson = JSON.parse(cleanScriptMatch[1]);
+
+          const sidebar = ytJson.sidebar?.playlistSidebarRenderer?.items || [];
+          const metadata = sidebar[0]?.playlistSidebarPrimaryInfoRenderer;
+          const plTitle = metadata?.title?.runs?.[0]?.text || "YouTube Mix Playlist";
+          const plCover = metadata?.thumbnailRenderer?.playlistVideoThumbnailRenderer?.thumbnail?.thumbnails?.[0]?.url || "";
+
+          const tabsRows = ytJson.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents?.[0]?.itemSectionRenderer?.contents?.[0]?.playlistVideoListRenderer?.contents || [];
+
+          const parsedYtTracks = tabsRows.map((videoItem: any) => {
+            const vData = videoItem.playlistVideoRenderer;
+            if (!vData) return null;
+            return {
+              trackId: Math.random().toString(36).slice(2, 10),
+              title: vData.title?.runs?.[0]?.text || "Unknown clip",
+              artist: vData.shortBylineText?.runs?.[0]?.text || "Soundtrack",
+              album: "YouTube Video Mix",
+              coverUrl: vData.thumbnail?.thumbnails?.[0]?.url || "",
+              source: "youtube"
+            };
+          }).filter(Boolean);
+
+          const importedYtPlaylist = {
+            name: plTitle,
+            description: "Synchronized long-form YouTube stream set.",
+            coverUrl: plCover,
+            sourceUrl: playlistUrl,
+            tracks: parsedYtTracks
+          };
+
+          return new Response(JSON.stringify(importedYtPlaylist), { status: 200, headers: { "content-type": "application/json" } });
+        }
+
+        return new Response(JSON.stringify({ error: "Unsupported platform layout string target" }), { status: 400 });
+      } catch (error: any) {
+        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+      }
+    }
+
+    // --- 🏴‍☠️ ROUTE D: DEEP TWO-STEP FITGIRL REPACK SCRAPER ---
     if (url.pathname === '/api/scrape-repack') {
       try {
         const titleQuery = url.searchParams.get('title');
@@ -282,7 +423,7 @@ export default {
       }
     }
 
-    // --- 🗄️ ROUTE D: FETCH MEDIA ITEMS FROM DATABASE COLLECTIONS ---
+    // --- 🗄️ ROUTE E: FETCH MEDIA ITEMS FROM DATABASE COLLECTIONS ---
     if (url.pathname === '/api/vault' && request.method === 'GET') {
       try {
         const { db } = await connectToDatabase();
@@ -296,7 +437,7 @@ export default {
       }
     }
 
-    // --- 💾 ROUTE E: PERSIST NEW ITEM ENTRY TO DATABASE COLLECTION ---
+    // --- 💾 ROUTE F: PERSIST NEW ITEM ENTRY TO DATABASE COLLECTION ---
     if (url.pathname === '/api/vault' && request.method === 'POST') {
       try {
         const { db } = await connectToDatabase();
@@ -318,7 +459,7 @@ export default {
       }
     }
 
-    // --- 🗑️ ROUTE F: CLEAN REMOVAL HANDLER INTERCEPTOR ---
+    // --- 🗑️ ROUTE G: CLEAN REMOVAL HANDLER INTERCEPTOR ---
     if (url.pathname === '/api/vault' && request.method === 'DELETE') {
       try {
         const { db } = await connectToDatabase();

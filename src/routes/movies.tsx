@@ -240,11 +240,23 @@ function MoviesPage() {
                           <Calendar className="h-3.5 w-3.5 text-cyan-500/70" /> {selected.year}
                         </span>
                       )}
-                      {selected.rating && (
-                        <span className="px-2 py-0.5 text-xs font-display font-black tracking-wider bg-gradient-to-r from-cyan-400 to-blue-600 text-white rounded-md shadow-md shadow-cyan-500/10">
-                          ★ SCORE: {selected.rating}
-                        </span>
-                      )}
+                      {selected.rating && (() => {
+                        const num = parseFloat(selected.rating);
+                        let badgeColor = "from-cyan-400 to-blue-600 shadow-cyan-500/10"; // default fallback
+                        
+                        if (!isNaN(num)) {
+                          if (num >= 9.0) badgeColor = "from-emerald-500 to-teal-500 shadow-emerald-500/20 text-white border border-emerald-400/20";
+                          else if (num >= 7.0) badgeColor = "from-cyan-400 to-blue-600 shadow-cyan-500/20 text-white border border-cyan-400/20";
+                          else if (num >= 5.0) badgeColor = "from-amber-400 to-orange-500 shadow-amber-500/20 text-white border border-amber-400/20";
+                          else badgeColor = "from-rose-500 to-red-600 shadow-rose-500/20 text-white border border-rose-400/20 animate-pulse";
+                        }
+
+                        return (
+                          <span className={`px-2 py-0.5 text-xs font-display font-black tracking-wider bg-gradient-to-r rounded-md shadow-md ${badgeColor}`}>
+                            ★ SCORE: {selected.rating}
+                          </span>
+                        );
+                      })()}
                       {selected.themeAudioUrl && (
                         <span className="text-cyan-400 text-[10px] font-mono tracking-widest uppercase flex items-center gap-1.5 animate-pulse bg-cyan-950/30 border border-cyan-500/20 px-2 py-0.5 rounded">
                           <Volume2 className="h-3 w-3" /> Audio Linked
@@ -361,13 +373,25 @@ function TheatreSpotlightCard({ movie, onSelect, glowClass, hidden }: { movie: M
           </div>
         )}
         
-        {movie.rating && (
-          <div className="absolute bottom-1.5 right-1.5 z-10">
-            <span className="px-1.5 py-0.5 text-[9px] font-display font-bold tracking-wider bg-zinc-950/90 text-cyan-400 border border-cyan-500/20 rounded shadow-md inline-block">
-              ★ {movie.rating}
-            </span>
-          </div>
-        )}
+        {movie.rating && (() => {
+          const num = parseFloat(movie.rating);
+          let badgeColor = "bg-zinc-950/90 text-zinc-400 border-zinc-800"; // fallback
+  
+          if (!isNaN(num)) {
+            if (num >= 9.0) badgeColor = "bg-emerald-950/80 text-emerald-400 border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]";
+            else if (num >= 7.0) badgeColor = "bg-cyan-950/80 text-cyan-400 border-cyan-500/30";
+            else if (num >= 5.0) badgeColor = "bg-amber-950/80 text-amber-400 border-amber-500/30";
+            else badgeColor = "bg-rose-950/80 text-rose-400 border-rose-500/30 animate-pulse";
+          }
+
+          return (
+            <div className="absolute bottom-1.5 right-1.5 z-10">
+              <span className={`px-1.5 py-0.5 text-[9px] font-display font-bold tracking-wider border rounded shadow-md inline-block backdrop-blur-md ${badgeColor}`}>
+                ★ {movie.rating}
+              </span>
+            </div>
+          );
+        })()}
       </div>
       <div className="font-display text-xs font-semibold leading-tight line-clamp-2 text-zinc-300 group-hover:text-white transition-colors">{movie.title}</div>
     </div>

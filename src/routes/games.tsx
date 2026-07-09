@@ -18,48 +18,68 @@ export const Route = createFileRoute("/games")({
   component: GamesPage,
 });
 
-// 🎧 Centralized player reference to seamlessly manage crossing fades and prevent overlapping audio streams
+// --- AUDIO INSTANCE & HOOK CONTROL ---
 let globalThemeAudioInstance: HTMLAudioElement | null = null;
 
-function playInstantThemePlayer(url: string | undefined) {
-  if (globalThemeAudioInstance) {
-    globalThemeAudioInstance.pause();
-    globalThemeAudioInstance = null;
+export function useInstantThemePlayer() {
+  const playTrack = (url: string | undefined) => {
+    if (globalThemeAudioInstance) {
+      globalThemeAudioInstance.pause();
+      globalThemeAudioInstance = null;
+    }
+    if (!url) return;
+
+    const audio = new Audio(url);
+    audio.volume = 0.0; // Start at silence to perform premium linear gain fade-in adjustments
+    audio.play().catch(() => console.log("Interactivity audio click interaction token required"));
+    globalThemeAudioInstance = audio;
+
+    // Linear fade audio up safely behind layout effects over 1 second
+    let currentVolume = 0;
+    const fadeInterval = setInterval(() => {
+      if (!globalThemeAudioInstance || globalThemeAudioInstance !== audio) {
+        clearInterval(fadeInterval);
+        return;
+      }
+      currentVolume = Math.min(currentVolume + 0.05, 0.28); // Lock ambient backplane layer at 28% max gain volume
+      audio.volume = currentVolume;
+      if (currentVolume >= 0.28) clearInterval(fadeInterval);
+    }, 50);
+
+    // Auto terminate after 15 seconds to fulfill your exact snippet specification time-window limits
+    setTimeout(() => {
+      if (globalThemeAudioInstance === audio) {
+        let fadeOutVol = audio.volume;
+        const fadeOutInterval = setInterval(() => {
+          fadeOutVol = Math.max(fadeOutVol - 0.04, 0);
+          if (audio) audio.volume = fadeOutVol;
+          if (fadeOutVol <= 0) {
+            clearInterval(fadeOutInterval);
+            audio.pause();
+            if (globalThemeAudioInstance === audio) globalThemeAudioInstance = null;
+          }
+        }, 50);
+      }
+    }, 15000);
+  };
+
+  return { playTrack };
+}
+
+// 🛠️ Safe track name text extractor helper utility function
+function extractReadableTrackName(url: string | undefined): string {
+  if (!url) return "Atmospheric Theme";
+  try {
+    // Try to extract from standard preview parameters or clean file structure patterns
+    const decoded = decodeURIComponent(url);
+    const fileNameMatch = decoded.match(/\/([^\/\?]+)\.(?:m4a|mp3)/i);
+    if (fileNameMatch && fileNameMatch[1]) {
+      return fileNameMatch[1].replace(/[-_]/g, ' ').trim();
+    }
+    return "Theme Soundtrack";
+  } catch {
+    return "Theme Soundtrack";
   }
-  if (!url) return;
-
-  const audio = new Audio(url);
-  audio.volume = 0.0; // Start at full silence for a clean fade-in sequence
-  audio.play().catch(() => console.log("Interactivity audio click interaction token required"));
-  globalThemeAudioInstance = audio;
-
-  // Smoothly scale audio gain up safely behind layout effects over 1 second
-  let currentVolume = 0;
-  const fadeInterval = setInterval(() => {
-    if (!globalThemeAudioInstance || globalThemeAudioInstance !== audio) {
-      clearInterval(fadeInterval);
-      return;
-    }
-    currentVolume = Math.min(currentVolume + 0.05, 0.28); // Lock ambient backplane layer at 28% max gain volume
-    audio.volume = currentVolume;
-    if (currentVolume >= 0.28) clearInterval(fadeInterval);
-  }, 50);
-
-  // Auto fade-out and stop track cleanly after exactly 15 seconds
-  setTimeout(() => {
-    if (globalThemeAudioInstance === audio) {
-      let fadeOutVol = audio.volume;
-      const fadeOutInterval = setInterval(() => {
-        fadeOutVol = Math.max(fadeOutVol - 0.04, 0);
-        if (audio) audio.volume = fadeOutVol;
-        if (fadeOutVol <= 0) {
-          clearInterval(fadeOutInterval);
-          audio.pause();
-          if (globalThemeAudioInstance === audio) globalThemeAudioInstance = null;
-        }
-      }, 50);
-    }
-  }, 15000);
 }
 
 function GamesPage() {
@@ -67,6 +87,9 @@ function GamesPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [selected, setSelected] = useState<Game | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Hook instance for direct click soundscaping
+  const { playTrack } = useInstantThemePlayer();
 
   // States for the cinematic direct-flight expansion sequence
   const [isJumping, setIsJumping] = useState(false);
@@ -89,19 +112,24 @@ function GamesPage() {
 
   // 🚀 PIXEL-PERFECT DIRECT FLIGHT MATCHING ENGINE + INTEGRATED AUDIO TRIGGER
   const handleGameSelect = (game: Game, cardElement: HTMLDivElement) => {
+    // Fire theme track immediately on click target interaction window
+    if (game.themeAudioUrl) {
+      playTrack(game.themeAudioUrl);
+    }
+
     setSelected(game);
     
     // 1. Capture original starting grid position boundaries
     const startRect = cardElement.getBoundingClientRect();
     
     setFlyStyle({
-      position: 'fixed',
+      position: "fixed",
       top: `${startRect.top}px`,
       left: `${startRect.left}px`,
       width: `${startRect.width}px`,
       height: `${startRect.height}px`,
       zIndex: 50,
-      transition: 'none',
+      transition: "none",
     });
 
     setIsJumping(true);
@@ -109,11 +137,6 @@ function GamesPage() {
 
     // 2. Mount full view panel silently behind layers to render the landing placeholder destination
     setShowFullView(true);
-
-    // 🎧 ACTIVATE SOUNDTRACK SNAPSHOT ON CLICK INSTANTLY (Matches Movie functionality)
-    if (game.themeAudioUrl) {
-      playInstantThemePlayer(game.themeAudioUrl);
-    }
 
     // 3. Wait exactly one frame for DOM layout pass engine to paint the target ref node
     requestAnimationFrame(() => {
@@ -125,12 +148,12 @@ function GamesPage() {
           
           setFlyStyle(prev => ({
             ...prev,
-            transition: 'all 0.7s cubic-bezier(0.16, 1, 0.3, 1)', // Flawless physics-based layout curve
+            transition: "all 0.7s cubic-bezier(0.16, 1, 0.3, 1)", // Flawless physics-based layout curve
             top: `${endRect.top}px`,
             left: `${endRect.left}px`,
             width: `${endRect.width}px`,
             height: `${endRect.height}px`,
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)",
           }));
         }
       }, 30); // Failsafe delay ensuring components mount completely
@@ -144,7 +167,7 @@ function GamesPage() {
   };
 
   const handleBackToLounge = () => {
-    // Stop soundtrack cleanly when hitting back button to exit detailed screen container
+    // 🎧 SHUT DOWN AUDIO CHANNEL IMMEDIATELY UPON LEAVING FULL VIEW
     if (globalThemeAudioInstance) {
       globalThemeAudioInstance.pause();
       globalThemeAudioInstance = null;
@@ -154,7 +177,7 @@ function GamesPage() {
     setFlyStyle({});
   };
 
-  // Ensure active players clean up when tearing down component tree paths
+  // Safe layout unmount controller to prevent rogue ghost background audio instances
   useEffect(() => {
     return () => {
       if (globalThemeAudioInstance) {
@@ -169,9 +192,10 @@ function GamesPage() {
     const num = parseFloat(ratingStr);
     if (isNaN(num)) return "group-hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] border-white/10";
     
-    if (num >= 9) return "group-hover:shadow-[0_0_35px_rgba(244,63,94,0.7)] border-rose-500/40"; 
-    if (num >= 7) return "group-hover:shadow-[0_0_35px_rgba(6,182,212,0.7)] border-cyan-500/40"; 
-    return "group-hover:shadow-[0_0_35px_rgba(168,85,247,0.6)] border-purple-500/40"; 
+    if (num >= 9) return "group-hover:shadow-[0_0_35px_rgba(16,185,129,0.55)] border-emerald-500/40"; 
+    if (num >= 7) return "group-hover:shadow-[0_0_35px_rgba(6,182,212,0.55)] border-cyan-500/40"; 
+    if (num >= 5) return "group-hover:shadow-[0_0_35px_rgba(245,158,11,0.45)] border-amber-500/40"; 
+    return "group-hover:shadow-[0_0_35px_rgba(244,63,94,0.45)] border-rose-500/40"; 
   };
 
   return (
@@ -201,7 +225,7 @@ function GamesPage() {
             <div>
               <div className="font-display text-[10px] tracking-widest text-cyan-400 mb-1 animate-pulse">// KINETIC HYPER-DRIVE ROUTER</div>
               <h1 className="text-3xl font-display flex items-center gap-3 text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.6)]">
-                <Gamepad2 className="h-7 w-7 text-pink-500 animate-spin" style={{ animationDuration: '4s' }} />
+                <Gamepad2 className="h-7 w-7 text-pink-500 animate-spin" style={{ animationDuration: "4s" }} />
                 Games Lounge
               </h1>
               <p className="text-sm text-zinc-300 mt-1 drop-shadow-[0_1px_4px_rgba(0,0,0,0.5)]">Archived titles with scores, mirrors and seed hashes.</p>
@@ -228,26 +252,24 @@ function GamesPage() {
           )}
         </div>
 
-        {/* 📺 FULL SCREEN CINEMATIC DETAILS VIEW MODE */}
+        {/* CINEMATIC FULL SCREEN DETAILED THEATRE ROW CONTAINER */}
         {showFullView && selected && (
           <div className="relative z-10 min-h-screen flex items-center justify-center p-6 md:p-12 animate-in fade-in duration-300">
-            <div className="w-full max-w-5xl bg-black/60 border border-white/10 backdrop-blur-3xl rounded-2xl p-6 md:p-10 shadow-[0_0_60px_rgba(0,0,0,0.8)] relative">
+            <div className="w-full max-w-5xl bg-zinc-950/80 border border-white/10 backdrop-blur-3xl rounded-2xl p-6 md:p-10 shadow-[0_0_60px_rgba(0,0,0,0.9)] relative overflow-hidden">
               
-              {/* Back Button */}
               <button 
                 onClick={handleBackToLounge}
-                className="absolute top-6 left-6 flex items-center gap-2 text-xs font-display tracking-widest text-zinc-400 hover:text-primary transition-colors group uppercase border-none bg-transparent outline-none cursor-pointer"
+                className="absolute top-6 left-6 flex items-center gap-2 text-xs font-display tracking-widest text-zinc-400 hover:text-cyan-400 transition-colors group uppercase border-none bg-transparent outline-none cursor-pointer text-left"
               >
-                <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /> back to lounge
+                <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /> exit lounge
               </button>
 
               <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-8 mt-8">
-                {/* Immersive Cover Frame container acting as live target anchor */}
+                {/* Landing Anchor Frame */}
                 <div 
                   ref={targetImageRef}
-                  className="w-[240px] h-[320px] rounded-xl border border-white/10 bg-background overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)]"
+                  className="w-[240px] h-[320px] rounded-xl border border-white/10 bg-zinc-950 overflow-hidden shadow-[0_2px_25px_rgba(0,0,0,0.8)]"
                 >
-                  {/* Keep image hidden while flight is in progress to avoid double-image overlay asset stutters */}
                   {!isJumping && (
                     selected.coverUrl ? (
                       <img src={selected.coverUrl} alt={selected.title} className="w-full h-full object-cover animate-fade-in duration-200" />
@@ -259,41 +281,67 @@ function GamesPage() {
 
                 {/* Meta Details Layout Content */}
                 <div className={`flex flex-col justify-between space-y-6 transition-all duration-300 ${isJumping ? "opacity-0 translate-x-4" : "opacity-100 translate-x-0"}`}>
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-center gap-4">
-                      <h2 className="font-display text-3xl md:text-4xl text-white tracking-tight">{selected.title}</h2>
-                      {selected.rating && (
-                        <span className="px-2 py-0.5 text-xs font-display font-black tracking-wider bg-gradient-to-r from-pink-500 to-cyan-500 text-white rounded-md shadow-md shadow-pink-500/10">
-                          ★ SCORE: {selected.rating}
-                        </span>
-                      )}
-                      {selected.themeAudioUrl && (
-                        <span className="text-pink-400 text-[10px] font-mono tracking-widest uppercase flex items-center gap-1.5 animate-pulse bg-pink-950/30 border border-pink-500/20 px-2 py-0.5 rounded">
-                          <Volume2 className="h-3 w-3" /> Audio Linked
-                        </span>
-                      )}
-                    </div>
+                  <div className="space-y-5">
                     
+                    {/* Line 1: Game Title */}
+                    <div>
+                      <h2 className="font-display text-3xl md:text-4xl text-white tracking-tight leading-tight">{selected.title}</h2>
+                    </div>
+
+                    {/* Line 2: Ratings & Dynamic Audio Track Name Extractor */}
+                    {selected.rating && (() => {
+                      const num = parseFloat(selected.rating);
+                      let badgeColor = "from-zinc-800 to-zinc-900 border-zinc-700/50 text-zinc-400";
+                      
+                      if (!isNaN(num)) {
+                        if (num >= 9.0) badgeColor = "from-emerald-950/80 to-teal-950/80 text-emerald-400 border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)]";
+                        else if (num >= 7.0) badgeColor = "from-cyan-950/80 to-blue-950/80 text-cyan-400 border-cyan-500/30";
+                        else if (num >= 5.0) badgeColor = "from-amber-950/80 to-orange-950/80 text-amber-400 border-amber-500/30";
+                        else badgeColor = "from-rose-950/80 to-red-950/80 text-rose-400 border-rose-500/30 animate-pulse";
+                      }
+
+                      return (
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className={`px-2.5 py-1 text-xs font-display font-black tracking-widest border rounded-md bg-gradient-to-r shadow-md backdrop-blur-sm ${badgeColor}`}>
+                            ★ SCORE: {selected.rating}
+                          </span>
+                          
+                          {selected.themeAudioUrl && (
+                            <span className="text-cyan-400 text-[10px] font-mono tracking-widest uppercase flex items-center gap-1.5 animate-pulse bg-cyan-950/30 border border-cyan-500/20 px-2.5 py-1 rounded-md max-w-xs truncate">
+                              <Volume2 className="h-3.5 w-3.5 shrink-0" /> 
+                              🎵 {extractReadableTrackName(selected.themeAudioUrl)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    
+                    {/* Line 3: Genres & Categories */}
                     {selected.tags && selected.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {selected.tags.map((t) => (
-                          <Badge key={t} variant="outline" className="text-[10px] font-display tracking-wider border-zinc-700 bg-zinc-900/60 text-zinc-300 px-2 py-0.5">
+                          <Badge key={t} variant="outline" className="text-[10px] font-display tracking-wider border-zinc-800 bg-zinc-900/60 text-zinc-300 px-2 py-0.5">
                             {t}
                           </Badge>
                         ))}
                       </div>
                     )}
 
+                    {/* Line 4: Description Summary Logline */}
                     {selected.description && (
-                      <p className="text-sm text-zinc-200 leading-relaxed bg-zinc-900/20 p-4 rounded-xl border border-white/5 shadow-inner">
-                        {selected.description}
-                      </p>
+                      <div className="space-y-1">
+                        <div className="font-display text-[9px] tracking-widest text-zinc-500 uppercase">// BRIEF SUMMARY</div>
+                        <p className="text-sm text-zinc-200 leading-relaxed bg-zinc-900/20 p-4 rounded-xl border border-white/5 shadow-inner font-sans">
+                          {selected.description}
+                        </p>
+                      </div>
                     )}
 
+                    {/* Line 5: Setup System Config Notes */}
                     {selected.notes && (
                       <div className="space-y-1">
                         <div className="font-display text-[10px] tracking-widest text-cyan-400 font-bold">// SYSTEM CONFIG NOTES</div>
-                        <p className="text-xs text-zinc-400 whitespace-pre-wrap border-l-2 border-cyan-400 pl-4 bg-cyan-950/5 py-2 rounded-r">
+                        <p className="text-xs text-zinc-400 whitespace-pre-wrap border-l-2 border-cyan-400 pl-4 bg-cyan-950/5 py-2 rounded-r font-mono">
                           {selected.notes}
                         </p>
                       </div>
@@ -387,21 +435,24 @@ function HolographicTiltCard({ game, onSelect, glowClass, hidden }: { game: Game
           }}
           className="absolute inset-0 pointer-events-none z-20"
         />
-
-        {/* Floating Indicator for active track content sets */}
-        {game.themeAudioUrl && (
-          <div className="absolute top-2 right-2 z-30 p-1 bg-black/60 backdrop-blur-md rounded border border-white/5 text-pink-400 opacity-60 group-hover:opacity-100 transition-opacity">
-            <Volume2 className="h-3 w-3" />
-          </div>
-        )}
         
-        {game.rating && (
-          <div className="absolute bottom-1.5 right-1.5 z-10">
-            <span className="px-1.5 py-0.5 text-[9px] font-display font-black tracking-wider bg-gradient-to-r from-pink-500 via-purple-600 to-cyan-500 text-white border border-white/20 rounded shadow-lg inline-block backdrop-blur-[2px]">
-              ★ {game.rating}
-            </span>
-          </div>
-        )}
+        {game.rating && (() => {
+          const num = parseFloat(game.rating);
+          let gridBadgeColor = "from-zinc-800 to-zinc-900";
+          if (!isNaN(num)) {
+            if (num >= 9.0) gridBadgeColor = "from-emerald-600 to-teal-500 shadow-[0_0_15px_rgba(16,185,129,0.4)]";
+            else if (num >= 7.0) gridBadgeColor = "from-cyan-500 to-blue-600";
+            else if (num >= 5.0) gridBadgeColor = "from-amber-500 to-orange-500";
+            else gridBadgeColor = "from-rose-600 to-red-700 animate-pulse";
+          }
+          return (
+            <div className="absolute bottom-1.5 right-1.5 z-10">
+              <span className={`px-1.5 py-0.5 text-[9px] font-display font-black tracking-wider bg-gradient-to-r border border-white/10 rounded shadow-lg inline-block backdrop-blur-[2px] ${gridBadgeColor}`}>
+                ★ {game.rating}
+              </span>
+            </div>
+          );
+        })()}
       </div>
       <div className="font-display text-xs font-bold leading-tight line-clamp-2 text-zinc-200 group-hover:text-cyan-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] transition-colors">{game.title}</div>
     </div>
@@ -523,9 +574,9 @@ function HyperShockwaveBackground({ globalStateRef }: { globalStateRef: React.Mu
 
 function EmptyState({ onAdd, label }: { onAdd: () => void; label: string }) {
   return (
-    <div className="border border-dashed border-white/10 bg-black/50 backdrop-blur-md rounded-xl p-12 text-center space-y-3 relative z-10">
-      <p className="text-sm text-zinc-400 font-display tracking-wider">Vault is completely unpopulated.</p>
-      <Button onClick={onAdd} variant="outline" className="border-white/10 text-white hover:bg-white/10"><Plus className="h-4 w-4 mr-1.5" /> Add your first {label}</Button>
+    <div className="border border-dashed border-white/10 bg-black/40 backdrop-blur-md rounded-xl p-12 text-center space-y-3 relative z-10">
+      <p className="text-sm text-zinc-400 font-display tracking-wider">Lounge collection has no logged records.</p>
+      <Button onClick={onAdd} variant="outline" className="border-white/10 text-white hover:bg-white/10"><Plus className="h-4 w-4 mr-1.5" /> Log your first {label}</Button>
     </div>
   );
 }

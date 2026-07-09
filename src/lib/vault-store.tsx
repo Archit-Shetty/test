@@ -1,7 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-export type GameStatus = "Playing" | "Backlog" | "Mastered";
-
 export interface Game {
   id: string;
   title: string;
@@ -12,7 +10,8 @@ export interface Game {
   magnet: string;
   mirrorUrl: string;
   notes: string;
-  themeAudioUrl?: string; // 🎧 Theme Audio Stream Link Anchor
+  themeAudioUrl?: string;
+  themeAudioTitle?: string;
 }
 
 export interface Movie {
@@ -25,13 +24,26 @@ export interface Movie {
   review: string;
   rating: string;
   loggedAt: string;
-  themeAudioUrl?: string; // 🎧 Theme Audio Stream Link Anchor
+  themeAudioUrl?: string;
+  themeAudioTitle?: string;
+}
+
+export interface Track {
+  trackId: string;
+  title: string;
+  artist: string;
+  album?: string;
+  coverUrl?: string;
+  source: "spotify" | "youtube" | "manual";
 }
 
 export interface Playlist {
   id: string;
   name: string;
-  embed: string;
+  description?: string;
+  coverUrl?: string;
+  sourceUrl?: string;
+  tracks: Track[];
 }
 
 interface VaultData {
@@ -47,13 +59,31 @@ interface VaultContextValue extends VaultData {
   removeGame: (id: string) => void;
   removeMovie: (id: string) => void;
   removePlaylist: (id: string) => void;
+  addTrackToPlaylist: (playlistId: string, track: Track) => Promise<void>;
+  removeTrackFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
   refreshVault: () => Promise<void>;
+  
+  // 🎧 Global Background Playback State Hooks
+  currentTrack: Track | null;
+  activePlaylist: Playlist | null;
+  isPlaying: boolean;
+  playTrackDirectly: (track: Track) => void;
+  playPlaylistDirectly: (playlist: Playlist, startTrackIndex?: number) => void;
+  setIsPlaying: (playing: boolean) => void;
+  nextTrack: () => void;
+  prevTrack: () => void;
 }
 
 const VaultContext = createContext<VaultContextValue | null>(null);
 
 export function VaultProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<VaultData>({ games: [], movies: [], playlists: [] });
+  
+  // 🎧 Jukebox Playback States
+  const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
+  const [activePlaylist, setActivePlaylist] = useState<Playlist | null>(null);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [trackIndex, setTrackIndex] = useState<number>(0);
 
   const refreshVault = async () => {
     try {
@@ -153,9 +183,69 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const addTrackToPlaylist = async (playlistId: string, track: Track) => {
+    try {
+      const res = await fetch("/api/vault/playlists/tracks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playlistId, action: "add", track })
+      });
+      if (res.ok) refreshVault();
+    } catch (err) {
+      console.error("Failed to add track:", err);
+    }
+  };
+
+  const removeTrackFromPlaylist = async (playlistId: string, trackId: string) => {
+    try {
+      const res = await fetch("/api/vault/playlists/tracks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playlistId, action: "remove", trackId })
+      });
+      if (res.ok) refreshVault();
+    } catch (err) {
+      console.error("Failed to remove track:", err);
+    }
+  };
+
+  // 🎧 Global audio player command structures
+  const playTrackDirectly = (track: Track) => {
+    setActivePlaylist(null);
+    setCurrentTrack(track);
+    setIsPlaying(true);
+  };
+
+  const playPlaylistDirectly = (playlist: Playlist, startTrackIndex = 0) => {
+    if (!playlist.tracks || playlist.tracks.length === 0) return;
+    setActivePlaylist(playlist);
+    setTrackIndex(startTrackIndex);
+    setCurrentTrack(playlist.tracks[startTrackIndex]);
+    setIsPlaying(true);
+  };
+
+  const nextTrack = () => {
+    if (!activePlaylist || activePlaylist.tracks.length <= 1) return;
+    const nextIdx = (trackIndex + 1) % activePlaylist.tracks.length;
+    setTrackIndex(nextIdx);
+    setCurrentTrack(activePlaylist.tracks[nextIdx]);
+  };
+
+  const prevTrack = () => {
+    if (!activePlaylist || activePlaylist.tracks.length <= 1) return;
+    const prevIdx = trackIndex === 0 ? activePlaylist.tracks.length - 1 : trackIndex - 1;
+    setTrackIndex(prevIdx);
+    setCurrentTrack(activePlaylist.tracks[prevIdx]);
+  };
+
   return (
-    <VaultContext.Provider value={{ ...data, addGame, addMovie, addPlaylist, removeGame, removeMovie, removePlaylist, refreshVault }}>
-      {children}
+    <VaultContext.Provider value={{ 
+      ...data, addGame, addMovie, addPlaylist, removeGame, removeMovie, removePlaylist, 
+      addTrackToPlaylist, removeTrackFromPlaylist, refreshVault,
+      currentTrack, activePlaylist, isPlaying, playTrackDirectly, playPlaylistDirectly,
+      setIsPlaying, nextTrack, prevTrack
+    }}>
+      {data.playlists && children}
     </VaultContext.Provider>
   );
 }
