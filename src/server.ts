@@ -115,20 +115,19 @@ export default {
       }
     }
 
-    // --- 🎬 ROUTE B: TMDB DUAL-FALLBACK MOVIE SEARCH PROXY ---
+// --- 🎬 ROUTE B: TMDB DUAL-FALLBACK MOVIE SEARCH PROXY ---
     if (url.pathname === '/api/search-movies') {
       try {
         const query = url.searchParams.get('query') || url.searchParams.get('q');
         if (!query) return new Response(JSON.stringify({ error: "Missing query parameters" }), { status: 400 });
 
         const rawToken = (env as any)?.TMDB_ACCESS_TOKEN || process.env.TMDB_ACCESS_TOKEN;
-        const tmdbToken = rawToken ? String(rawToken).replace(/[\r\n"']/g, '').trim() : "";
+        const tmdbToken = rawToken ? String(rawToken).replace(/[\r\n"'\s\[\]]/g, '').trim() : "";
 
         if (!tmdbToken || tmdbToken.length < 10) {
-          return new Response(JSON.stringify({ error: "TMDb access token is unreadable or missing from environment." }), { status: 500 });
+          return new Response(JSON.stringify({ error: "TMDb access token missing from configuration environment." }), { status: 500 });
         }
 
-        // 🏷️ TMDb Static Genre Dictionary Matrix
         const TMDB_GENRES: Record<number, string> = {
           28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy",
           80: "Crime", 99: "Documentary", 18: "Drama", 10751: "Family",
@@ -138,67 +137,56 @@ export default {
         };
 
         let tmdbResponse: Response | null = null;
-        let fetchError: Error | null = null;
-
         try {
-          tmdbResponse = await fetch(
-            `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`,
-            {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${tmdbToken}`,
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-              }
-            }
-          );
-        } catch (err: any) {
-          fetchError = err;
-        }
+          tmdbResponse = await fetch(`https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`, {
+            method: 'GET', headers: { 'Authorization': `Bearer ${tmdbToken}`, 'Accept': 'application/json' }
+          });
+        } catch { /* Fallback trigger */ }
 
         if (!tmdbResponse || !tmdbResponse.ok) {
-          try {
-            tmdbResponse = await fetch(
-              `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`,
-              {
-                method: 'GET',
-                headers: {
-                  'Authorization': `Bearer ${tmdbToken}`,
-                  'Accept': 'application/json',
-                  'Content-Type': 'application/json'
-                }
-              }
-            );
-          } catch (mirrorErr: any) {
-            return new Response(JSON.stringify({ error: "Network pipeline blocked" }), { status: 502 });
-          }
+          tmdbResponse = await fetch(`https://api.tmdb.org/3/search/movie?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`, {
+            method: 'GET', headers: { 'Authorization': `Bearer ${tmdbToken}`, 'Accept': 'application/json' }
+          });
         }
 
-        if (!tmdbResponse.ok) {
-          return new Response(JSON.stringify({ error: `Upstream error status ${tmdbResponse.status}` }), { status: tmdbResponse.status });
-        }
+        if (!tmdbResponse.ok) return new Response(JSON.stringify({ error: "Upstream error" }), { status: tmdbResponse.status });
 
         const data = await tmdbResponse.json();
-        const polishedMovies = (data.results || []).slice(0, 6).map((movie: any) => {
-          // Look up the matching strings from the genre_ids array returned by TMDb
-          const resolvedGenres = movie.genre_ids && movie.genre_ids.length > 0
-            ? movie.genre_ids.map((id: number) => TMDB_GENRES[id]).filter(Boolean)
-            : ["Cinema"];
+        const movieResults = (data.results || []).slice(0, 5);
+
+        // Fetch deep watch provider arrays for each searched movie entry item asynchronously
+        const polishedMovies = await Promise.all(movieResults.map(async (movie: any) => {
+          const resolvedGenres = movie.genre_ids ? movie.genre_ids.map((id: number) => TMDB_GENRES[id]).filter(Boolean) : ["Cinema"];
+          let watchProviders: any[] = [];
+
+          try {
+            const providerRes = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}/watch/providers`, {
+              method: 'GET', headers: { 'Authorization': `Bearer ${tmdbToken}`, 'Accept': 'application/json' }
+            });
+            if (providerRes.ok) {
+              const pData = await providerRes.ok ? await providerRes.json() : {};
+              // Fallback default country filtering matrices (checks IN region first, then US as backup)
+              const regionalData = pData.results?.IN || pData.results?.US;
+              if (regionalData && regionalData.flatrate) {
+                watchProviders = regionalData.flatrate.map((p: any) => ({
+                  name: p.provider_name,
+                  logoUrl: p.logo_path ? `https://image.tmdb.org/t/p/w92${p.logo_path}` : ""
+                }));
+              }
+            }
+          } catch { /* Suppress provider error */ }
 
           return {
             title: movie.title,
             coverUrl: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "",
             year: movie.release_date ? new Date(movie.release_date).getFullYear() : undefined,
             description: movie.overview || "No synopsis cataloged in archives.",
-            genres: resolvedGenres // Now returns full genre name arrays!
+            genres: resolvedGenres,
+            watchProviders // Appends streaming details directly into object fields
           };
-        });
+        }));
 
-        return new Response(JSON.stringify(polishedMovies), { 
-          status: 200, 
-          headers: { "content-type": "application/json" } 
-        });
-
+        return new Response(JSON.stringify(polishedMovies), { status: 200, headers: { "content-type": "application/json" } });
       } catch (error: any) {
         return new Response(JSON.stringify({ error: error.message }), { status: 500 });
       }

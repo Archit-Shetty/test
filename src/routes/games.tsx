@@ -66,22 +66,6 @@ export function useInstantThemePlayer() {
   return { playTrack };
 }
 
-// 🛠️ Safe track name text extractor helper utility function
-function extractReadableTrackName(url: string | undefined): string {
-  if (!url) return "Atmospheric Theme";
-  try {
-    // Try to extract from standard preview parameters or clean file structure patterns
-    const decoded = decodeURIComponent(url);
-    const fileNameMatch = decoded.match(/\/([^\/\?]+)\.(?:m4a|mp3)/i);
-    if (fileNameMatch && fileNameMatch[1]) {
-      return fileNameMatch[1].replace(/[-_]/g, ' ').trim();
-    }
-    return "Theme Soundtrack";
-  } catch {
-    return "Theme Soundtrack";
-  }
-}
-
 function GamesPage() {
   const { games, removeGame } = useVault();
   const [addOpen, setAddOpen] = useState(false);
@@ -309,7 +293,7 @@ function GamesPage() {
                           {selected.themeAudioUrl && (
                             <span className="text-cyan-400 text-[10px] font-mono tracking-widest uppercase flex items-center gap-1.5 animate-pulse bg-cyan-950/30 border border-cyan-500/20 px-2.5 py-1 rounded-md max-w-xs truncate">
                               <Volume2 className="h-3.5 w-3.5 shrink-0" /> 
-                              🎵 {extractReadableTrackName(selected.themeAudioUrl)}
+                              🎵 {selected.themeAudioTitle || "Theme Track Synced"}
                             </span>
                           )}
                         </div>

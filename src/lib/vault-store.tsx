@@ -14,6 +14,11 @@ export interface Game {
   themeAudioTitle?: string;
 }
 
+export interface WatchProvider {
+  name: string;
+  logoUrl: string;
+}
+
 export interface Movie {
   id: string;
   title: string;
@@ -26,6 +31,7 @@ export interface Movie {
   loggedAt: string;
   themeAudioUrl?: string;
   themeAudioTitle?: string;
+  watchProviders?: WatchProvider[]; // 🎬 Stores streaming logos cleanly!
 }
 
 export interface Track {

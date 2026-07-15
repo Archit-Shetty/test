@@ -5,7 +5,7 @@ import { AddMediaDialog } from "@/components/AddMediaDialog";
 import { useVault, type Movie } from "@/lib/vault-store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ImageOff, Trash2, ArrowLeft, Calendar, Film, Plus, Volume2 } from "lucide-react";
+import { ImageOff, Trash2, ArrowLeft, Calendar, Film, Plus, Volume2, Tv } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/movies")({
@@ -18,7 +18,7 @@ export const Route = createFileRoute("/movies")({
   component: MoviesPage,
 });
 
-// 🎧 Centralized player reference to seamlessly manage crossing fades and prevent overlapping audio streams
+// --- AUDIO INSTANCE & HOOK CONTROL ---
 let globalMovieAudioInstance: HTMLAudioElement | null = null;
 
 function playInstantMovieTheme(url: string | undefined) {
@@ -29,11 +29,11 @@ function playInstantMovieTheme(url: string | undefined) {
   if (!url) return;
 
   const audio = new Audio(url);
-  audio.volume = 0.0; // Start at full silence for a clean fade-in sequence
-  audio.play().catch(() => console.log("User interaction context token required to fire media"));
+  audio.volume = 0.0; // Start at zero for a smooth premium fade-in effect
+  audio.play().catch(() => console.log("User interaction required before browser audio triggers."));
   globalMovieAudioInstance = audio;
 
-  // Smoothly scale audio gain up to 30% volume over 1 second
+  // Fade audio up smoothly to 30% ambient volume over 1 second
   let currentVol = 0;
   const fadeIn = setInterval(() => {
     if (!globalMovieAudioInstance || globalMovieAudioInstance !== audio) {
@@ -45,7 +45,7 @@ function playInstantMovieTheme(url: string | undefined) {
     if (currentVol >= 0.3) clearInterval(fadeIn);
   }, 50);
 
-  // Auto fade-out and stop track cleanly after exactly 15 seconds
+  // Auto fade-out and stop track after exactly 15 seconds
   setTimeout(() => {
     if (globalMovieAudioInstance === audio) {
       let fadeOutVol = audio.volume;
@@ -79,8 +79,9 @@ function MoviesPage() {
     const num = parseFloat(ratingStr);
     if (isNaN(num)) return "group-hover:shadow-[0_0_25px_rgba(168,85,247,0.3)] border-white/10";
     
-    if (num >= 9) return "group-hover:shadow-[0_0_35px_rgba(234,179,8,0.45)] border-amber-500/30"; 
-    if (num >= 7) return "group-hover:shadow-[0_0_35px_rgba(6,182,212,0.45)] border-cyan-500/30"; 
+    if (num >= 9) return "group-hover:shadow-[0_0_35px_rgba(16,185,129,0.55)] border-emerald-500/40"; 
+    if (num >= 7) return "group-hover:shadow-[0_0_35px_rgba(6,182,212,0.55)] border-cyan-500/40"; 
+    if (num >= 5) return "group-hover:shadow-[0_0_35px_rgba(245,158,11,0.45)] border-amber-500/40";
     return "group-hover:shadow-[0_0_35px_rgba(244,63,94,0.35)] border-rose-500/30"; 
   };
 
@@ -101,7 +102,7 @@ function MoviesPage() {
     setIsProjecting(true);
     setShowFullView(true);
 
-    // 🎧 ACTIVATE SOUNDTRACK SNAPSHOT ON CLICK INSTANTLY
+    // 🎧 ACTIVATE LIVE AUDIO CONTEXT INSTANTLY ON BANNER CLICK
     playInstantMovieTheme(movie.themeAudioUrl);
 
     requestAnimationFrame(() => {
@@ -129,7 +130,6 @@ function MoviesPage() {
   };
 
   const handleBackToLounge = () => {
-    // Stop soundtrack when hitting back button to exit detailed screen container
     if (globalMovieAudioInstance) {
       globalMovieAudioInstance.pause();
       globalMovieAudioInstance = null;
@@ -139,7 +139,6 @@ function MoviesPage() {
     setFlyStyle({});
   };
 
-  // Ensure active players clean up when tearing down components
   useEffect(() => {
     return () => {
       if (globalMovieAudioInstance) {
@@ -230,71 +229,106 @@ function MoviesPage() {
                   )}
                 </div>
 
-                {/* Info Text Meta Compartment */}
+                {/* 🛠️ ALIGNED VERTICAL DETAILS CONSOLE */}
                 <div className={`flex flex-col justify-between space-y-6 transition-all duration-300 ${isProjecting ? "opacity-0 translate-x-4" : "opacity-100 translate-x-0"}`}>
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-baseline gap-3.5">
-                      <h2 className="font-display text-3xl md:text-4xl text-white tracking-tight">{selected.title}</h2>
+                  <div className="space-y-5">
+                    
+                    {/* Line 1: Movie Title */}
+                    <div>
+                      <h2 className="font-display text-3xl md:text-4xl text-white tracking-tight leading-tight">{selected.title}</h2>
+                    </div>
+
+                    {/* Line 2: Year & Heat-Score Rating & Theme Track Name */}
+                    <div className="flex flex-wrap items-center gap-3">
                       {selected.year && (
-                        <span className="flex items-center gap-1 text-sm font-mono text-zinc-400">
+                        <span className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono border border-zinc-800 bg-zinc-900/40 rounded-md text-zinc-300 shadow-sm">
                           <Calendar className="h-3.5 w-3.5 text-cyan-500/70" /> {selected.year}
                         </span>
                       )}
+
                       {selected.rating && (() => {
                         const num = parseFloat(selected.rating);
-                        let badgeColor = "from-cyan-400 to-blue-600 shadow-cyan-500/10"; // default fallback
+                        let badgeColor = "from-zinc-800 to-zinc-900 border-zinc-700/50 text-zinc-400";
                         
                         if (!isNaN(num)) {
-                          if (num >= 9.0) badgeColor = "from-emerald-500 to-teal-500 shadow-emerald-500/20 text-white border border-emerald-400/20";
-                          else if (num >= 7.0) badgeColor = "from-cyan-400 to-blue-600 shadow-cyan-500/20 text-white border border-cyan-400/20";
-                          else if (num >= 5.0) badgeColor = "from-amber-400 to-orange-500 shadow-amber-500/20 text-white border border-amber-400/20";
-                          else badgeColor = "from-rose-500 to-red-600 shadow-rose-500/20 text-white border border-rose-400/20 animate-pulse";
+                          if (num >= 9.0) badgeColor = "from-emerald-950/80 to-teal-950/80 text-emerald-400 border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)]";
+                          else if (num >= 7.0) badgeColor = "from-cyan-950/80 to-blue-950/80 text-cyan-400 border-cyan-500/30";
+                          else if (num >= 5.0) badgeColor = "from-amber-950/80 to-orange-950/80 text-amber-400 border-amber-500/30";
+                          else badgeColor = "from-rose-950/80 to-red-950/80 text-rose-400 border-rose-500/30 animate-pulse";
                         }
 
                         return (
-                          <span className={`px-2 py-0.5 text-xs font-display font-black tracking-wider bg-gradient-to-r rounded-md shadow-md ${badgeColor}`}>
+                          <span className={`px-2.5 py-1 text-xs font-display font-black tracking-widest border rounded-md bg-gradient-to-r shadow-md backdrop-blur-sm ${badgeColor}`}>
                             ★ SCORE: {selected.rating}
                           </span>
                         );
                       })()}
+                      
                       {selected.themeAudioUrl && (
-                        <span className="text-cyan-400 text-[10px] font-mono tracking-widest uppercase flex items-center gap-1.5 animate-pulse bg-cyan-950/30 border border-cyan-500/20 px-2 py-0.5 rounded">
-                          <Volume2 className="h-3 w-3" /> Audio Linked
+                        <span className="text-cyan-400 text-[10px] font-mono tracking-widest uppercase flex items-center gap-1.5 animate-pulse bg-cyan-950/30 border border-cyan-500/20 px-2.5 py-1 rounded-md max-w-xs truncate shadow-sm">
+                          <Volume2 className="h-3.5 w-3.5 shrink-0" /> 
+                          🎵 {selected.themeAudioTitle || "Theme Track Synced"}
                         </span>
                       )}
                     </div>
                     
+                    {/* Line 3: Category Genres Badges Matrix */}
                     {selected.tags && selected.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {selected.tags.map((t) => (
-                          <Badge key={t} variant="outline" className="text-[10px] font-display tracking-wider border-zinc-800 bg-zinc-900/40 text-zinc-300 px-2 py-0.5">
+                          <Badge key={t} variant="outline" className="text-[10px] font-display tracking-wider border-zinc-800 bg-zinc-900/60 text-zinc-300 px-2 py-0.5">
                             {t}
                           </Badge>
                         ))}
                       </div>
                     )}
 
+                    {/* Line 4: Synopsis Logline */}
                     {selected.description && (
                       <div className="space-y-1">
                         <div className="font-display text-[9px] tracking-widest text-zinc-500 uppercase">// LOGLINE</div>
-                        <p className="text-sm text-zinc-200 leading-relaxed bg-zinc-900/20 p-4 rounded-xl border border-white/5 shadow-inner">
+                        <p className="text-sm text-zinc-200 leading-relaxed bg-zinc-900/20 p-4 rounded-xl border border-white/5 shadow-inner font-sans">
                           {selected.description}
                         </p>
                       </div>
                     )}
 
+                    {/* Line 5: Reflective Review Commentary Block */}
                     {selected.review && (
                       <div className="space-y-1">
-                        <div className="font-display text-[10px] tracking-widest text-cyan-400 font-bold">// PERSONAL REVIEW</div>
-                        <p className="text-sm text-zinc-300 italic whitespace-pre-wrap border-l-2 border-cyan-400 pl-4 bg-cyan-950/5 py-2 rounded-r">
+                        <div className="font-display text-[10px] tracking-widest text-cyan-400 font-bold">// PERSONAL REFLECTION REVIEW</div>
+                        <p className="text-sm text-zinc-300 italic whitespace-pre-wrap border-l-2 border-cyan-400 pl-4 bg-cyan-950/5 py-2 rounded-r font-sans">
                           "{selected.review}"
                         </p>
                       </div>
                     )}
+
+                    {/* 📺 Line 6: Streaming Availabilities Platform Hub drawer */}
+                    <div className="space-y-2 pt-2">
+                      <div className="font-display text-[9px] tracking-widest text-zinc-500 uppercase flex items-center gap-1">
+                        <Tv className="h-3 w-3 text-zinc-500" /> STREAMING CHANNELS AVAILABILITY
+                      </div>
+                      <div className="flex flex-wrap gap-3.5 items-center">
+                        {selected.watchProviders && selected.watchProviders.length > 0 ? (
+                          selected.watchProviders.map((prov, pIdx) => (
+                            <div key={`${prov.name}-${pIdx}`} className="group/prov flex items-center gap-2 bg-zinc-900/40 border border-white/5 rounded-lg p-1.5 pr-3 hover:border-cyan-500/20 transition-all duration-300 shadow-md">
+                              {prov.logoUrl ? (
+                                <img src={prov.logoUrl} alt={prov.name} className="w-6 h-6 rounded-md object-cover border border-white/10 shadow-sm" />
+                              ) : (
+                                <div className="w-6 h-6 rounded bg-zinc-800 flex items-center justify-center text-[8px] text-zinc-400">OTT</div>
+                              )}
+                              <span className="text-[10px] font-mono font-bold tracking-wider text-zinc-300 group-hover/prov:text-cyan-400 transition-colors">{prov.name}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-[11px] font-sans text-zinc-500 italic pl-1">No direct active flatrate provider tags cataloged for this region.</div>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Actions Management Tray */}
-                  <div className="flex flex-wrap gap-3 pt-6 border-t border-white/5">
+                  <div className="flex flex-wrap gap-3 pt-4 border-t border-white/5">
                     <Button
                       size="sm"
                       variant="ghost"
@@ -321,9 +355,6 @@ function MoviesPage() {
   );
 }
 
-/**
- * 💡 CINEMA CARD: Spotlight Vignette Overlay
- */
 function TheatreSpotlightCard({ movie, onSelect, glowClass, hidden }: { movie: Movie; onSelect: (el: HTMLDivElement) => void; glowClass: string; hidden: boolean }) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [lightCoords, setLightCoords] = useState({ x: 50, y: 50, active: false });
@@ -366,7 +397,6 @@ function TheatreSpotlightCard({ movie, onSelect, glowClass, hidden }: { movie: M
           className="absolute inset-0 pointer-events-none z-20"
         />
 
-        {/* Floating Indicator for active track content sets */}
         {movie.themeAudioUrl && (
           <div className="absolute top-2 right-2 z-30 p-1 bg-black/60 backdrop-blur-md rounded border border-white/5 text-cyan-400 opacity-60 group-hover:opacity-100 transition-opacity">
             <Volume2 className="h-3 w-3" />
@@ -375,18 +405,16 @@ function TheatreSpotlightCard({ movie, onSelect, glowClass, hidden }: { movie: M
         
         {movie.rating && (() => {
           const num = parseFloat(movie.rating);
-          let badgeColor = "bg-zinc-950/90 text-zinc-400 border-zinc-800"; // fallback
-  
+          let gridBadgeColor = "from-zinc-800 to-zinc-900";
           if (!isNaN(num)) {
-            if (num >= 9.0) badgeColor = "bg-emerald-950/80 text-emerald-400 border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]";
-            else if (num >= 7.0) badgeColor = "bg-cyan-950/80 text-cyan-400 border-cyan-500/30";
-            else if (num >= 5.0) badgeColor = "bg-amber-950/80 text-amber-400 border-amber-500/30";
-            else badgeColor = "bg-rose-950/80 text-rose-400 border-rose-500/30 animate-pulse";
+            if (num >= 9.0) gridBadgeColor = "from-emerald-600 to-teal-500 shadow-[0_0_15px_rgba(16,185,129,0.4)]";
+            else if (num >= 7.0) gridBadgeColor = "from-cyan-500 to-blue-600";
+            else if (num >= 5.0) gridBadgeColor = "from-amber-500 to-orange-500";
+            else gridBadgeColor = "from-rose-600 to-red-700 animate-pulse";
           }
-
           return (
             <div className="absolute bottom-1.5 right-1.5 z-10">
-              <span className={`px-1.5 py-0.5 text-[9px] font-display font-bold tracking-wider border rounded shadow-md inline-block backdrop-blur-md ${badgeColor}`}>
+              <span className={`px-1.5 py-0.5 text-[9px] font-display font-black tracking-wider bg-gradient-to-r border border-white/10 rounded shadow-lg inline-block backdrop-blur-[2px] ${gridBadgeColor}`}>
                 ★ {movie.rating}
               </span>
             </div>
@@ -398,9 +426,6 @@ function TheatreSpotlightCard({ movie, onSelect, glowClass, hidden }: { movie: M
   );
 }
 
-/**
- * 📽️ INTERACTIVE PROJECTOR BACKGROUND COMPONENT
- */
 function InteractiveProjectorBackground() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mouseRef = useRef({ x: 0, y: 0 });
@@ -477,22 +502,6 @@ function InteractiveProjectorBackground() {
 
       ctx.fillStyle = lightGradient;
       ctx.fill();
-
-      ctx.save();
-      ctx.globalCompositeOperation = "screen";
-      for (let j = 1; j <= 3; j++) {
-        const offsetTick = tick * (0.4 / j);
-        const swirlX = sourceX + (target.x - sourceX) * 0.5 + Math.sin(offsetTick) * 120;
-        const swirlY = sourceY + (target.y - sourceY) * 0.5 + Math.cos(offsetTick * 0.8) * 80;
-
-        const smokeGrad = ctx.createRadialGradient(swirlX, swirlY, 10, swirlX, swirlY, 250 * j);
-        smokeGrad.addColorStop(0, `rgba(6, 182, 212, ${0.03 / j})`);
-        smokeGrad.addColorStop(1, "rgba(0,0,0,0)");
-        
-        ctx.fillStyle = smokeGrad;
-        ctx.fillRect(0, 0, width, height);
-      }
-      ctx.restore();
 
       motes.forEach((m) => {
         m.x += m.vx;
