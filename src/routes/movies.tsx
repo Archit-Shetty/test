@@ -5,7 +5,7 @@ import { AddMediaDialog } from "@/components/AddMediaDialog";
 import { useVault, type Movie } from "@/lib/vault-store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ImageOff, Trash2, ArrowLeft, Calendar, Film, Plus, Volume2, Tv } from "lucide-react";
+import { ImageOff, Trash2, ArrowLeft, Calendar, Film, Plus, Volume2, Tv, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/movies")({
@@ -303,28 +303,27 @@ function MoviesPage() {
                       </div>
                     )}
 
-                    {/* 📺 Line 6: Streaming Availabilities Platform Hub drawer */}
+                    {/* 📺 Line 6: Direct Aggregator Streaming Links */}
                     <div className="space-y-2 pt-2">
-                      <div className="font-display text-[9px] tracking-widest text-zinc-500 uppercase flex items-center gap-1">
-                        <Tv className="h-3 w-3 text-zinc-500" /> STREAMING CHANNELS AVAILABILITY
+                      <div className="font-display text-[9px] tracking-widest text-zinc-500 uppercase flex items-center gap-1.5">
+                        <Tv className="h-3 w-3 text-cyan-400" /> STREAMING LOOKUP & WATCH OPTIONS
                       </div>
-                      <div className="flex flex-wrap gap-3.5 items-center">
-                        {selected.watchProviders && selected.watchProviders.length > 0 ? (
-                          selected.watchProviders.map((prov, pIdx) => (
-                            <div key={`${prov.name}-${pIdx}`} className="group/prov flex items-center gap-2 bg-zinc-900/40 border border-white/5 rounded-lg p-1.5 pr-3 hover:border-cyan-500/20 transition-all duration-300 shadow-md">
-                              {prov.logoUrl ? (
-                                <img src={prov.logoUrl} alt={prov.name} className="w-6 h-6 rounded-md object-cover border border-white/10 shadow-sm" />
-                              ) : (
-                                <div className="w-6 h-6 rounded bg-zinc-800 flex items-center justify-center text-[8px] text-zinc-400">OTT</div>
-                              )}
-                              <span className="text-[10px] font-mono font-bold tracking-wider text-zinc-300 group-hover/prov:text-cyan-400 transition-colors">{prov.name}</span>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-[11px] font-sans text-zinc-500 italic pl-1">No direct active flatrate provider tags cataloged for this region.</div>
-                        )}
+                      <div className="flex flex-wrap gap-3 items-center">
+                        <a
+                          href={`https://www.google.com/search?q=where+to+watch+${encodeURIComponent(selected.title)}+movie`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="group/link flex items-center gap-2 bg-gradient-to-r from-cyan-500/15 to-blue-500/5 border border-cyan-500/30 hover:border-cyan-400 rounded-lg px-3.5 py-2 transition-all duration-200 shadow-md hover:scale-[1.02]"
+                        >
+                          <div className="w-5 h-5 rounded bg-cyan-400 text-black flex items-center justify-center font-black text-[9px] shrink-0">G</div>
+                          <span className="text-[11px] font-display font-bold text-cyan-300 group-hover/link:text-white transition-colors">
+                            Google Stream Finder
+                          </span>
+                          <ExternalLink className="h-3 w-3 text-cyan-400/70 group-hover/link:text-cyan-300 transition-colors" />
+                        </a>
                       </div>
                     </div>
+
                   </div>
 
                   {/* Actions Management Tray */}

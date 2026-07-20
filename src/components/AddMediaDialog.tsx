@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useVault } from "@/lib/vault-store";
 import { searchGameMetadata } from "@/lib/wiki-search";
 import { toast } from "sonner";
-import { Search, Loader2, ImageOff, ChevronLeft, Download, Music, Play, Square, Check } from "lucide-react";
+import { Search, Loader2, ImageOff, ChevronLeft, Download, Music, Play, Square, Check, Tv, Film } from "lucide-react";
 
 type Kind = "game" | "movie";
 
@@ -38,7 +38,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
   const [mirror, setMirror] = useState("");
   const [notes, setNotes] = useState("");
 
-  // Movie extras
+  // Movie/Series extras
   const [year, setYear] = useState("");
   const [review, setReview] = useState("");
 
@@ -47,7 +47,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioTracks, setAudioTracks] = useState<any[]>([]);
   const [selectedAudioUrl, setSelectedAudioUrl] = useState("");
-  const [selectedAudioTitle, setSelectedAudioTitle] = useState(""); 
+  const [selectedAudioTitle, setSelectedAudioTitle] = useState("");
   const [playingPreviewUrl, setPlayingPreviewUrl] = useState("");
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -101,7 +101,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
         if (!response.ok) throw new Error();
         const data = await response.json();
         if (data && data.length > 0) setResults(data);
-        else { setResults([]); toast.message("No cinematic results found"); }
+        else { setResults([]); toast.message("No media results found"); }
       }
     } catch {
       toast.error("Query timeout");
@@ -127,16 +127,18 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
     }
   };
 
-// Inside your existing pick assignment handler function block:
   const pick = async (r: any) => {
     setTitle(r.title);
     setCoverUrl(r.coverUrl || r.thumbnail || "");
     setDescription(r.description || "");
-    if (r.genres) setTags(Array.isArray(r.genres) ? r.genres.join(", ") : r.genres);
+
+    let parsedGenres = Array.isArray(r.genres) ? [...r.genres] : (r.genres ? [r.genres] : []);
+    if (r.mediaType === "tv" && !parsedGenres.includes("TV Series")) {
+      parsedGenres.unshift("TV Series");
+    }
+    setTags(parsedGenres.join(", "));
+
     if (r.year) setYear(String(r.year));
-    
-    // 🎧 Cache provider array variables down into component session states
-    (r as any).watchProviders ? (window as any)._cachedProviders = r.watchProviders : (window as any)._cachedProviders = [];
     setStep("details");
 
     if (kind === "game") {
@@ -188,11 +190,10 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
         year: Number(year) || new Date().getFullYear(),
         rating, review,
         themeAudioUrl: selectedAudioUrl,
-        themeAudioTitle: selectedAudioTitle,
-        watchProviders: (window as any)._cachedProviders || [] // 🎬 Commits providers array cleanly to database items
+        themeAudioTitle: selectedAudioTitle
       } as any);
-      toast.success("Movie archived with custom soundtrack!");
-    }      
+      toast.success("Media entry logged with custom soundtrack!");
+    }
     close(false);
   };
 
@@ -206,7 +207,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle className="font-display tracking-widest uppercase text-cyan-400 flex items-center gap-2">
             {step === "audio" && <Music className="h-5 w-5 animate-pulse text-cyan-400" />}
-            {step === "search" ? `Find ${kind === "game" ? "Game via IGDB" : "Movie via TMDb"}` : step === "details" ? "Confirm Details" : "Sync Atmospheric Theme Track"}
+            {step === "search" ? `Find ${kind === "game" ? "Game via IGDB" : "Movie or TV Series via TMDb"}` : step === "details" ? "Confirm Details" : "Sync Atmospheric Theme Track"}
           </DialogTitle>
           <DialogDescription className="text-zinc-400">
             {step === "search" && "Search database metadata network index to automatically scrape layouts."}
@@ -218,7 +219,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
         {step === "search" && (
           <div className="space-y-4">
             <form onSubmit={(e) => { e.preventDefault(); runSearch(); }} className="flex gap-2">
-              <Input autoFocus placeholder={kind === "game" ? "e.g. Elden Ring" : "e.g. Interstellar"} value={query} onChange={(e) => setQuery(e.target.value)} className="bg-zinc-950 border-zinc-800 text-zinc-100" />
+              <Input autoFocus placeholder={kind === "game" ? "e.g. Elden Ring" : "e.g. Breaking Bad, Interstellar, Arcane..."} value={query} onChange={(e) => setQuery(e.target.value)} className="bg-zinc-950 border-zinc-800 text-zinc-100" />
               <Button type="submit" disabled={loading || !query.trim()} className="bg-zinc-800 hover:bg-zinc-700 text-white">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               </Button>
@@ -226,9 +227,19 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
             {results.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {results.map((r, index) => (
-                  <button key={`${r.title}-${index}`} onClick={() => pick(r)} className="group text-left rounded-md border border-zinc-800 bg-zinc-950 hover:border-cyan-500 overflow-hidden transition-colors">
+                  <button key={`${r.title}-${index}`} onClick={() => pick(r)} className="group text-left rounded-md border border-zinc-800 bg-zinc-950 hover:border-cyan-500 overflow-hidden transition-colors relative">
                     <div className="aspect-[2/3] bg-zinc-900 overflow-hidden relative">
-                      {r.coverUrl || r.thumbnail ? <img src={r.coverUrl || r.thumbnail} alt={r.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" /> : <div className="flex items-center justify-center h-full text-zinc-600"><ImageOff className="h-6 w-6" /></div>}
+                      {r.coverUrl || r.thumbnail ? (
+                        <img src={r.coverUrl || r.thumbnail} alt={r.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-zinc-600"><ImageOff className="h-6 w-6" /></div>
+                      )}
+                      {r.mediaType && (
+                        <div className="absolute top-1.5 left-1.5 bg-black/80 backdrop-blur-sm border border-white/10 rounded px-1.5 py-0.5 text-[8px] font-mono uppercase font-bold text-cyan-300 flex items-center gap-1">
+                          {r.mediaType === "tv" ? <Tv className="h-2.5 w-2.5 text-pink-400" /> : <Film className="h-2.5 w-2.5 text-amber-400" />}
+                          {r.mediaType}
+                        </div>
+                      )}
                     </div>
                     <div className="p-2">
                       <div className="text-xs font-medium leading-tight text-zinc-200 line-clamp-2">{r.title}</div>
@@ -259,7 +270,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
                 <Field label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} className="bg-zinc-950 border-zinc-800 text-zinc-100" /></Field>
                 <Field label="Cover image URL"><Input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} className="bg-zinc-950 border-zinc-800 text-zinc-100" /></Field>
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="Tags"><Input value={tags} onChange={(e) => setTags(e.target.value)} className="bg-zinc-950 border-zinc-800 text-zinc-100" /></Field>
+                  <Field label="Tags / Genres"><Input value={tags} onChange={(e) => setTags(e.target.value)} className="bg-zinc-950 border-zinc-800 text-zinc-100" /></Field>
                   <Field label="Rating"><Input value={rating} onChange={(e) => setRating(e.target.value)} className="bg-zinc-950 border-zinc-800 text-zinc-100" /></Field>
                 </div>
               </div>

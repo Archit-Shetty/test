@@ -115,7 +115,7 @@ export default {
       }
     }
 
-// --- 🎬 ROUTE B: TMDB DUAL-FALLBACK MOVIE SEARCH PROXY ---
+// --- 🎬 ROUTE B: TMDB MULTI-SEARCH PROXY (MOVIES + TV SERIES) ---
     if (url.pathname === '/api/search-movies') {
       try {
         const query = url.searchParams.get('query') || url.searchParams.get('q');
@@ -133,60 +133,47 @@ export default {
           80: "Crime", 99: "Documentary", 18: "Drama", 10751: "Family",
           14: "Fantasy", 36: "History", 27: "Horror", 10402: "Music",
           9648: "Mystery", 10749: "Romance", 878: "Sci-Fi", 10770: "TV Movie",
-          53: "Thriller", 10752: "War", 37: "Western"
+          53: "Thriller", 10752: "War", 37: "Western",
+          10759: "Action & Adventure", 10762: "Kids", 10763: "News",
+          10764: "Reality", 10765: "Sci-Fi & Fantasy", 10766: "Soap",
+          10767: "Talk", 10768: "War & Politics"
         };
 
         let tmdbResponse: Response | null = null;
         try {
-          tmdbResponse = await fetch(`https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`, {
+          tmdbResponse = await fetch(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`, {
             method: 'GET', headers: { 'Authorization': `Bearer ${tmdbToken}`, 'Accept': 'application/json' }
           });
         } catch { /* Fallback trigger */ }
 
         if (!tmdbResponse || !tmdbResponse.ok) {
-          tmdbResponse = await fetch(`https://api.tmdb.org/3/search/movie?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`, {
+          tmdbResponse = await fetch(`https://api.tmdb.org/3/search/multi?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`, {
             method: 'GET', headers: { 'Authorization': `Bearer ${tmdbToken}`, 'Accept': 'application/json' }
           });
         }
 
-        if (!tmdbResponse.ok) return new Response(JSON.stringify({ error: "Upstream error" }), { status: tmdbResponse.status });
+        if (!tmdbResponse.ok) return new Response(JSON.stringify({ error: "Upstream TMDB API error" }), { status: tmdbResponse.status });
 
         const data = await tmdbResponse.json();
-        const movieResults = (data.results || []).slice(0, 5);
+        const polishedResults = (data.results || [])
+          .filter((item: any) => item.media_type === "movie" || item.media_type === "tv")
+          .slice(0, 6)
+          .map((item: any) => {
+            const resolvedGenres = item.genre_ids ? item.genre_ids.map((id: number) => TMDB_GENRES[id]).filter(Boolean) : ["Cinema"];
+            const titleName = item.title || item.name;
+            const releaseDate = item.release_date || item.first_air_date;
 
-        // Fetch deep watch provider arrays for each searched movie entry item asynchronously
-        const polishedMovies = await Promise.all(movieResults.map(async (movie: any) => {
-          const resolvedGenres = movie.genre_ids ? movie.genre_ids.map((id: number) => TMDB_GENRES[id]).filter(Boolean) : ["Cinema"];
-          let watchProviders: any[] = [];
+            return {
+              title: titleName,
+              coverUrl: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : "",
+              year: releaseDate ? new Date(releaseDate).getFullYear() : undefined,
+              description: item.overview || "No synopsis cataloged in archives.",
+              genres: resolvedGenres,
+              mediaType: item.media_type // "movie" or "tv"
+            };
+          });
 
-          try {
-            const providerRes = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}/watch/providers`, {
-              method: 'GET', headers: { 'Authorization': `Bearer ${tmdbToken}`, 'Accept': 'application/json' }
-            });
-            if (providerRes.ok) {
-              const pData = await providerRes.ok ? await providerRes.json() : {};
-              // Fallback default country filtering matrices (checks IN region first, then US as backup)
-              const regionalData = pData.results?.IN || pData.results?.US;
-              if (regionalData && regionalData.flatrate) {
-                watchProviders = regionalData.flatrate.map((p: any) => ({
-                  name: p.provider_name,
-                  logoUrl: p.logo_path ? `https://image.tmdb.org/t/p/w92${p.logo_path}` : ""
-                }));
-              }
-            }
-          } catch { /* Suppress provider error */ }
-
-          return {
-            title: movie.title,
-            coverUrl: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "",
-            year: movie.release_date ? new Date(movie.release_date).getFullYear() : undefined,
-            description: movie.overview || "No synopsis cataloged in archives.",
-            genres: resolvedGenres,
-            watchProviders // Appends streaming details directly into object fields
-          };
-        }));
-
-        return new Response(JSON.stringify(polishedMovies), { status: 200, headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify(polishedResults), { status: 200, headers: { "content-type": "application/json" } });
       } catch (error: any) {
         return new Response(JSON.stringify({ error: error.message }), { status: 500 });
       }
