@@ -115,7 +115,40 @@ export default {
       }
     }
 
-// --- 🎬 ROUTE B: TMDB MULTI-SEARCH PROXY (MOVIES + TV SERIES) ---
+// --- 🎬 ROUTE: DIRECT YOUTUBE TRAILER AUTO-SCRAPER ---
+    if (url.pathname === '/api/get-trailer') {
+      try {
+        const title = url.searchParams.get('title');
+        if (!title) return new Response(JSON.stringify({ error: "Missing title parameter" }), { status: 400 });
+
+        // Query YouTube directly for the official trailer
+        const ytSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + " official trailer")}`;
+        const ytResponse = await fetch(ytSearchUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9'
+          }
+        });
+
+        if (ytResponse.ok) {
+          const htmlText = await ytResponse.text();
+          // Extract the first 11-character YouTube video ID from the search results payload
+          const match = htmlText.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+          if (match && match[1]) {
+            return new Response(JSON.stringify({ trailerKey: match[1] }), {
+              status: 200,
+              headers: { "content-type": "application/json" }
+            });
+          }
+        }
+
+        return new Response(JSON.stringify({ error: "No trailer found on YouTube" }), { status: 404 });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+      }
+    }
+
+    // --- 🎬 ROUTE B: TMDB MULTI-SEARCH PROXY ---
     if (url.pathname === '/api/search-movies') {
       try {
         const query = url.searchParams.get('query') || url.searchParams.get('q');
@@ -144,7 +177,7 @@ export default {
           tmdbResponse = await fetch(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`, {
             method: 'GET', headers: { 'Authorization': `Bearer ${tmdbToken}`, 'Accept': 'application/json' }
           });
-        } catch { /* Fallback trigger */ }
+        } catch { /* Fallback */ }
 
         if (!tmdbResponse || !tmdbResponse.ok) {
           tmdbResponse = await fetch(`https://api.tmdb.org/3/search/multi?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`, {
@@ -169,7 +202,7 @@ export default {
               year: releaseDate ? new Date(releaseDate).getFullYear() : undefined,
               description: item.overview || "No synopsis cataloged in archives.",
               genres: resolvedGenres,
-              mediaType: item.media_type // "movie" or "tv"
+              mediaType: item.media_type
             };
           });
 

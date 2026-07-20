@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useVault } from "@/lib/vault-store";
 import { searchGameMetadata } from "@/lib/wiki-search";
 import { toast } from "sonner";
-import { Search, Loader2, ImageOff, ChevronLeft, Download, Music, Play, Square, Check, Tv, Film } from "lucide-react";
+import { Search, Loader2, ImageOff, ChevronLeft, Download, Music, Play, Square, Check, Tv, Film, Sparkles } from "lucide-react";
 
 type Kind = "game" | "movie";
 
@@ -23,6 +23,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [scrapingRepack, setScrapingRepack] = useState(false);
+  const [fetchingTrailer, setFetchingTrailer] = useState(false);
   const [results, setResults] = useState<any[]>([]);
   const [scrapedData, setScrapedData] = useState<{ found: boolean; magnet?: string; pageUrl?: string } | null>(null);
 
@@ -41,6 +42,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
   // Movie/Series extras
   const [year, setYear] = useState("");
   const [review, setReview] = useState("");
+  const [trailerKey, setTrailerKey] = useState("");
 
   // Theme audio fields
   const [audioQuery, setAudioQuery] = useState("");
@@ -57,7 +59,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
     setQuery(""); setResults([]); setScrapedData(null);
     setTitle(""); setCoverUrl(""); setDescription(""); setTags(""); setRating("");
     setMagnet(""); setMirror(""); setNotes("");
-    setYear(""); setReview("");
+    setYear(""); setReview(""); setTrailerKey("");
     setAudioQuery(""); setAudioTracks([]); setSelectedAudioUrl(""); setSelectedAudioTitle("");
   };
 
@@ -110,6 +112,29 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
     }
   };
 
+  const handleAutoFetchTrailer = async () => {
+    if (!title.trim()) return toast.error("Title required");
+    setFetchingTrailer(true);
+    try {
+      const res = await fetch(`/api/get-trailer?title=${encodeURIComponent(title)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.trailerKey) {
+          setTrailerKey(data.trailerKey);
+          toast.success("YouTube trailer key injected!");
+        } else {
+          toast.error("No trailer found");
+        }
+      } else {
+        toast.error("Could not locate trailer automatically");
+      }
+    } catch {
+      toast.error("Trailer fetch failed");
+    } finally {
+      setFetchingTrailer(false);
+    }
+  };
+
   const runAudioSearch = async (forcedQuery?: string) => {
     const targetQuery = forcedQuery || audioQuery;
     if (!targetQuery.trim()) return;
@@ -140,6 +165,16 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
 
     if (r.year) setYear(String(r.year));
     setStep("details");
+
+    // Automatically trigger trailer lookup in background upon picking
+    if (kind === "movie" && r.title) {
+      fetch(`/api/get-trailer?title=${encodeURIComponent(r.title)}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.trailerKey) setTrailerKey(data.trailerKey);
+        })
+        .catch(() => {});
+    }
 
     if (kind === "game") {
       setScrapingRepack(true);
@@ -190,9 +225,10 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
         year: Number(year) || new Date().getFullYear(),
         rating, review,
         themeAudioUrl: selectedAudioUrl,
-        themeAudioTitle: selectedAudioTitle
+        themeAudioTitle: selectedAudioTitle,
+        trailerKey
       } as any);
-      toast.success("Media entry logged with custom soundtrack!");
+      toast.success("Media entry logged with trailer & soundtrack!");
     }
     close(false);
   };
@@ -284,7 +320,25 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
               </>
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-3"><Field label="Year"><Input type="number" value={year} onChange={(e) => setYear(e.target.value)} className="bg-zinc-950 border-zinc-800 text-zinc-100" /></Field></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Year"><Input type="number" value={year} onChange={(e) => setYear(e.target.value)} className="bg-zinc-950 border-zinc-800 text-zinc-100" /></Field>
+                  <div className="space-y-1.5">
+                    <Label className="font-display text-[10px] tracking-widest text-zinc-400 uppercase">YouTube Trailer Key</Label>
+                    <div className="flex gap-2">
+                      <Input value={trailerKey} onChange={(e) => setTrailerKey(e.target.value)} placeholder="e.g. d9MyW72ELq0" className="bg-zinc-950 border-zinc-800 text-zinc-100 font-mono text-xs" />
+                      <Button 
+                        type="button" 
+                        size="sm" 
+                        disabled={fetchingTrailer || !title} 
+                        onClick={handleAutoFetchTrailer}
+                        className="bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600/30 text-xs font-display tracking-wider shrink-0 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {fetchingTrailer ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                        Inject
+                      </Button>
+                    </div>
+                  </div>
+                </div>
                 <Field label="Personal review"><Textarea value={review} onChange={(e) => setReview(e.target.value)} rows={3} className="bg-zinc-950 border-zinc-800 text-zinc-100" /></Field>
               </>
             )}

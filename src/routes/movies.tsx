@@ -5,7 +5,7 @@ import { AddMediaDialog } from "@/components/AddMediaDialog";
 import { useVault, type Movie } from "@/lib/vault-store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ImageOff, Trash2, ArrowLeft, Calendar, Film, Plus, Volume2, Tv, ExternalLink } from "lucide-react";
+import { ImageOff, Trash2, ArrowLeft, Calendar, Film, Plus, Volume2, Tv, ExternalLink, Play, X } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/movies")({
@@ -29,11 +29,10 @@ function playInstantMovieTheme(url: string | undefined) {
   if (!url) return;
 
   const audio = new Audio(url);
-  audio.volume = 0.0; // Start at zero for a smooth premium fade-in effect
+  audio.volume = 0.0;
   audio.play().catch(() => console.log("User interaction required before browser audio triggers."));
   globalMovieAudioInstance = audio;
 
-  // Fade audio up smoothly to 30% ambient volume over 1 second
   let currentVol = 0;
   const fadeIn = setInterval(() => {
     if (!globalMovieAudioInstance || globalMovieAudioInstance !== audio) {
@@ -45,7 +44,6 @@ function playInstantMovieTheme(url: string | undefined) {
     if (currentVol >= 0.3) clearInterval(fadeIn);
   }, 50);
 
-  // Auto fade-out and stop track after exactly 15 seconds
   setTimeout(() => {
     if (globalMovieAudioInstance === audio) {
       let fadeOutVol = audio.volume;
@@ -72,6 +70,9 @@ function MoviesPage() {
   const [showFullView, setShowFullView] = useState(false);
   const [flyStyle, setFlyStyle] = useState<React.CSSProperties>({});
   
+  // State for YouTube Trailer Modal
+  const [showTrailerModal, setShowTrailerModal] = useState(false);
+
   const targetImageRef = useRef<HTMLDivElement | null>(null);
 
   const getMovieGlowClass = (ratingStr: string) => {
@@ -102,7 +103,6 @@ function MoviesPage() {
     setIsProjecting(true);
     setShowFullView(true);
 
-    // 🎧 ACTIVATE LIVE AUDIO CONTEXT INSTANTLY ON BANNER CLICK
     playInstantMovieTheme(movie.themeAudioUrl);
 
     requestAnimationFrame(() => {
@@ -136,6 +136,7 @@ function MoviesPage() {
     }
     setShowFullView(false);
     setSelected(null);
+    setShowTrailerModal(false);
     setFlyStyle({});
   };
 
@@ -178,15 +179,15 @@ function MoviesPage() {
                 <Film className="h-7 w-7 text-cyan-400 animate-pulse" />
                 Movie Theatre
               </h1>
-              <p className="text-sm text-zinc-300 mt-1">Private digital archive of logged movies, personal reviews, and scores.</p>
+              <p className="text-sm text-zinc-300 mt-1">Private digital archive of logged movies, TV series, personal reviews, and scores.</p>
             </div>
             <Button onClick={() => setAddOpen(true)} className="bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-500 text-white font-black shadow-[0_0_20px_rgba(6,182,212,0.3)] border-none">
-              <Plus className="h-4 w-4 mr-1.5" /> Log Movie
+              <Plus className="h-4 w-4 mr-1.5" /> Log Media
             </Button>
           </header>
 
           {movies.length === 0 ? (
-            <EmptyState onAdd={() => setAddOpen(true)} label="movie" />
+            <EmptyState onAdd={() => setAddOpen(true)} label="movie or TV series" />
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-4">
               {movies.map((m) => (
@@ -218,7 +219,7 @@ function MoviesPage() {
                 {/* Landing Anchor Frame */}
                 <div 
                   ref={targetImageRef}
-                  className="w-[240px] h-[320px] rounded-xl border border-white/10 bg-zinc-950 overflow-hidden shadow-[0_2px_25px_rgba(0,0,0,0.8)]"
+                  className="w-[240px] h-[320px] rounded-xl border border-white/10 bg-zinc-950 overflow-hidden shadow-[0_2px_25px_rgba(0,0,0,0.8)] relative group"
                 >
                   {!isProjecting && (
                     selected.coverUrl ? (
@@ -303,14 +304,35 @@ function MoviesPage() {
                       </div>
                     )}
 
-                    {/* 📺 Line 6: Direct Aggregator Streaming Links */}
+                    {/* 📺 Line 6: Direct Streaming & Trailer Triggers */}
                     <div className="space-y-2 pt-2">
                       <div className="font-display text-[9px] tracking-widest text-zinc-500 uppercase flex items-center gap-1.5">
-                        <Tv className="h-3 w-3 text-cyan-400" /> STREAMING LOOKUP & WATCH OPTIONS
+                        <Tv className="h-3 w-3 text-cyan-400" /> WATCH OPTIONS & MEDIA
                       </div>
                       <div className="flex flex-wrap gap-3 items-center">
+                        {/* 🎬 WATCH TRAILER BUTTON */}
+                        {selected.trailerKey && (
+                          <button
+                            onClick={() => {
+                              if (globalMovieAudioInstance) {
+                                globalMovieAudioInstance.pause();
+                              }
+                              setShowTrailerModal(true);
+                            }}
+                            className="group/link flex items-center gap-2 bg-gradient-to-r from-red-600/20 to-rose-600/10 border border-red-500/40 hover:border-red-400 rounded-lg px-3.5 py-2 transition-all duration-200 shadow-md hover:scale-[1.02] cursor-pointer"
+                          >
+                            <div className="w-5 h-5 rounded bg-red-500 text-white flex items-center justify-center font-black text-[9px] shrink-0">
+                              <Play className="h-3 w-3 fill-current ml-0.5" />
+                            </div>
+                            <span className="text-[11px] font-display font-bold text-red-300 group-hover/link:text-white transition-colors uppercase tracking-wider">
+                              Watch Trailer
+                            </span>
+                          </button>
+                        )}
+
+                        {/* 🔍 GOOGLE STREAM FINDER LINK */}
                         <a
-                          href={`https://www.google.com/search?q=where+to+watch+${encodeURIComponent(selected.title)}+movie`}
+                          href={`https://www.google.com/search?q=where+to+watch+${encodeURIComponent(selected.title)}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="group/link flex items-center gap-2 bg-gradient-to-r from-cyan-500/15 to-blue-500/5 border border-cyan-500/30 hover:border-cyan-400 rounded-lg px-3.5 py-2 transition-all duration-200 shadow-md hover:scale-[1.02]"
@@ -347,6 +369,28 @@ function MoviesPage() {
             </div>
           </div>
         )}
+
+        {/* 🍿 POPUP EMBEDDED YOUTUBE TRAILER MODAL */}
+        {showTrailerModal && selected?.trailerKey && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
+            <div className="relative w-full max-w-4xl aspect-video rounded-xl overflow-hidden border border-white/10 bg-black shadow-2xl">
+              <button
+                onClick={() => setShowTrailerModal(false)}
+                className="absolute top-3 right-3 z-10 p-2 rounded-full bg-black/70 text-zinc-400 hover:text-white hover:bg-black border border-white/10 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <iframe
+                src={`https://www.youtube.com/embed/${selected.trailerKey}?autoplay=1&rel=0`}
+                title={`${selected.title} Trailer`}
+                className="w-full h-full border-none"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          </div>
+        )}
+
       </div>
 
       <AddMediaDialog kind="movie" open={addOpen} onOpenChange={setAddOpen} />

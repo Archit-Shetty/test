@@ -32,6 +32,7 @@ export interface Movie {
   themeAudioUrl?: string;
   themeAudioTitle?: string;
   watchProviders?: WatchProvider[]; // 🎬 Stores streaming logos cleanly!
+  trailerKey?: string; // 🎬 Stores YouTube Trailer Video Key
 }
 
 export interface Track {
