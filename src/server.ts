@@ -146,7 +146,7 @@ export default {
       }
     }
 
-// --- 🎬 ROUTE B: BULLETPROOF TMDB MOVIE + TV SEARCH (40 RESULTS) ---
+    // --- 🚀 ROUTE B: INSTANT TMDB MULTI-SEARCH PROXY (PARALLEL RACING) ---
     if (url.pathname === '/api/search-movies') {
       try {
         const query = url.searchParams.get('query') || url.searchParams.get('q');
@@ -156,7 +156,7 @@ export default {
         const tmdbToken = rawToken ? String(rawToken).replace(/[\r\n"'\s\[\]]/g, '').trim() : "";
 
         if (!tmdbToken || tmdbToken.length < 10) {
-          return new Response(JSON.stringify({ error: "TMDb access token missing." }), { status: 500 });
+          return new Response(JSON.stringify({ error: "TMDb access token missing from configuration environment." }), { status: 500 });
         }
 
         const TMDB_GENRES: Record<number, string> = {
@@ -173,21 +173,27 @@ export default {
         const targetQuery = encodeURIComponent(query);
         const headers = { 'Authorization': `Bearer ${tmdbToken}`, 'Accept': 'application/json' };
 
-        // 🚀 Fetch Movies (P1 + P2) and TV Shows (P1 + P2) simultaneously in parallel
-        const [movieP1, movieP2, tvP1, tvP2] = await Promise.all([
-          fetch(`https://api.themoviedb.org/3/search/movie?query=${targetQuery}&include_adult=false&language=en-US&page=1`, { headers }).then(r => r.ok ? r.json() : { results: [] }),
-          fetch(`https://api.themoviedb.org/3/search/movie?query=${targetQuery}&include_adult=false&language=en-US&page=2`, { headers }).then(r => r.ok ? r.json() : { results: [] }),
-          fetch(`https://api.themoviedb.org/3/search/tv?query=${targetQuery}&include_adult=false&language=en-US&page=1`, { headers }).then(r => r.ok ? r.json() : { results: [] }),
-          fetch(`https://api.themoviedb.org/3/search/tv?query=${targetQuery}&include_adult=false&language=en-US&page=2`, { headers }).then(r => r.ok ? r.json() : { results: [] })
-        ]);
+        // 🏎️ RACE BOTH ENDPOINTS IN PARALLEL - Resolves whichever responds first!
+        const fetchEndpoint = async (domain: string) => {
+          const res = await fetch(`https://${domain}/3/search/multi?query=${targetQuery}&include_adult=false&language=en-US&page=1`, { headers });
+          if (!res.ok) throw new Error(`Failed ${domain}`);
+          return res;
+        };
 
-        const combinedMovies = [...(movieP1.results || []), ...(movieP2.results || [])].map((item: any) => ({ ...item, media_type: "movie" }));
-        const combinedTV = [...(tvP1.results || []), ...(tvP2.results || [])].map((item: any) => ({ ...item, media_type: "tv" }));
+        let tmdbResponse: Response;
+        try {
+          tmdbResponse = await Promise.any([
+            fetchEndpoint('api.themoviedb.org'),
+            fetchEndpoint('api.tmdb.org')
+          ]);
+        } catch {
+          return new Response(JSON.stringify({ error: "All TMDb endpoints failed" }), { status: 502 });
+        }
 
-        // Merge, rank strictly by popularity score, and return top 30 clean matches
-        const allMedia = [...combinedMovies, ...combinedTV]
-          .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
-          .slice(0, 30)
+        const data = await tmdbResponse.json();
+        const polishedResults = (data.results || [])
+          .filter((item: any) => item.media_type === "movie" || item.media_type === "tv")
+          .slice(0, 6)
           .map((item: any) => {
             const resolvedGenres = item.genre_ids ? item.genre_ids.map((id: number) => TMDB_GENRES[id]).filter(Boolean) : ["Cinema"];
             const titleName = item.title || item.name;
@@ -203,11 +209,11 @@ export default {
             };
           });
 
-        return new Response(JSON.stringify(allMedia), { 
+        return new Response(JSON.stringify(polishedResults), { 
           status: 200, 
           headers: { 
             "content-type": "application/json",
-            "Cache-Control": "no-cache, no-store, must-revalidate"
+            "Cache-Control": "public, max-age=3600" // Cache results to eliminate repeat latency
           } 
         });
       } catch (error: any) {

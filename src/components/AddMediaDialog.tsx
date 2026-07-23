@@ -90,7 +90,7 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
     }
   };
 
-const runSearch = async () => {
+  const runSearch = async () => {
     if (!query.trim()) return;
     setLoading(true);
     try {
@@ -102,7 +102,6 @@ const runSearch = async () => {
         const response = await fetch(`/api/search-movies?query=${encodeURIComponent(query)}`);
         if (!response.ok) throw new Error();
         const data = await response.json();
-        // ⚠️ Ensure 'data' is passed directly without any data.slice(0, 6) here!
         if (data && data.length > 0) setResults(data);
         else { setResults([]); toast.message("No media results found"); }
       }
@@ -266,30 +265,28 @@ const runSearch = async () => {
               </Button>
             </form>
             {results.length > 0 && (
-              <div className="max-h-[420px] overflow-y-auto pr-1">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {results.map((r, index) => (
-                    <button key={`${r.title}-${index}`} onClick={() => pick(r)} className="group text-left rounded-md border border-zinc-800 bg-zinc-950 hover:border-cyan-500 overflow-hidden transition-colors relative cursor-pointer">
-                      <div className="aspect-[2/3] bg-zinc-900 overflow-hidden relative">
-                        {r.coverUrl || r.thumbnail ? (
-                          <img src={r.coverUrl || r.thumbnail} alt={r.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
-                        ) : (
-                          <div className="flex items-center justify-center h-full text-zinc-600"><ImageOff className="h-6 w-6" /></div>
-                        )}
-                        {r.mediaType && (
-                          <div className="absolute top-1.5 left-1.5 bg-black/80 backdrop-blur-sm border border-white/10 rounded px-1.5 py-0.5 text-[8px] font-mono uppercase font-bold text-cyan-300 flex items-center gap-1">
-                            {r.mediaType === "tv" ? <Tv className="h-2.5 w-2.5 text-pink-400" /> : <Film className="h-2.5 w-2.5 text-amber-400" />}
-                            {r.mediaType}
-                          </div>
-                        )}
-                      </div>
-                      <div className="p-2">
-                        <div className="text-xs font-medium leading-tight text-zinc-200 line-clamp-2">{r.title}</div>
-                        {r.year && <div className="text-[10px] text-zinc-500 mt-0.5">{r.year}</div>}
-                      </div>
-                    </button>
-                  ))}
-                </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {results.map((r, index) => (
+                  <button key={`${r.title}-${index}`} onClick={() => pick(r)} className="group text-left rounded-md border border-zinc-800 bg-zinc-950 hover:border-cyan-500 overflow-hidden transition-colors relative">
+                    <div className="aspect-[2/3] bg-zinc-900 overflow-hidden relative">
+                      {r.coverUrl || r.thumbnail ? (
+                        <img src={r.coverUrl || r.thumbnail} alt={r.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-zinc-600"><ImageOff className="h-6 w-6" /></div>
+                      )}
+                      {r.mediaType && (
+                        <div className="absolute top-1.5 left-1.5 bg-black/80 backdrop-blur-sm border border-white/10 rounded px-1.5 py-0.5 text-[8px] font-mono uppercase font-bold text-cyan-300 flex items-center gap-1">
+                          {r.mediaType === "tv" ? <Tv className="h-2.5 w-2.5 text-pink-400" /> : <Film className="h-2.5 w-2.5 text-amber-400" />}
+                          {r.mediaType}
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-2">
+                      <div className="text-xs font-medium leading-tight text-zinc-200 line-clamp-2">{r.title}</div>
+                      {r.year && <div className="text-[10px] text-zinc-500 mt-0.5">{r.year}</div>}
+                    </div>
+                  </button>
+                ))}
               </div>
             )}
             <button onClick={() => { setScrapedData(null); setTitle(query); setStep("details"); }} className="text-xs text-zinc-500 hover:text-cyan-400 underline underline-offset-4 bg-transparent border-none outline-none cursor-pointer">Add manually →</button>
