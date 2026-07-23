@@ -121,7 +121,6 @@ export default {
         const title = url.searchParams.get('title');
         if (!title) return new Response(JSON.stringify({ error: "Missing title parameter" }), { status: 400 });
 
-        // Query YouTube directly for the official trailer
         const ytSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + " official trailer")}`;
         const ytResponse = await fetch(ytSearchUrl, {
           headers: {
@@ -132,7 +131,6 @@ export default {
 
         if (ytResponse.ok) {
           const htmlText = await ytResponse.text();
-          // Extract the first 11-character YouTube video ID from the search results payload
           const match = htmlText.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
           if (match && match[1]) {
             return new Response(JSON.stringify({ trailerKey: match[1] }), {
@@ -148,7 +146,7 @@ export default {
       }
     }
 
-    // --- 🎬 ROUTE B: TMDB MULTI-SEARCH PROXY ---
+// --- 🎬 ROUTE B: BULLETPROOF TMDB MOVIE + TV SEARCH (40 RESULTS) ---
     if (url.pathname === '/api/search-movies') {
       try {
         const query = url.searchParams.get('query') || url.searchParams.get('q');
@@ -158,7 +156,7 @@ export default {
         const tmdbToken = rawToken ? String(rawToken).replace(/[\r\n"'\s\[\]]/g, '').trim() : "";
 
         if (!tmdbToken || tmdbToken.length < 10) {
-          return new Response(JSON.stringify({ error: "TMDb access token missing from configuration environment." }), { status: 500 });
+          return new Response(JSON.stringify({ error: "TMDb access token missing." }), { status: 500 });
         }
 
         const TMDB_GENRES: Record<number, string> = {
@@ -172,25 +170,24 @@ export default {
           10767: "Talk", 10768: "War & Politics"
         };
 
-        let tmdbResponse: Response | null = null;
-        try {
-          tmdbResponse = await fetch(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`, {
-            method: 'GET', headers: { 'Authorization': `Bearer ${tmdbToken}`, 'Accept': 'application/json' }
-          });
-        } catch { /* Fallback */ }
+        const targetQuery = encodeURIComponent(query);
+        const headers = { 'Authorization': `Bearer ${tmdbToken}`, 'Accept': 'application/json' };
 
-        if (!tmdbResponse || !tmdbResponse.ok) {
-          tmdbResponse = await fetch(`https://api.tmdb.org/3/search/multi?query=${encodeURIComponent(query)}&include_adult=false&language=en-US&page=1`, {
-            method: 'GET', headers: { 'Authorization': `Bearer ${tmdbToken}`, 'Accept': 'application/json' }
-          });
-        }
+        // 🚀 Fetch Movies (P1 + P2) and TV Shows (P1 + P2) simultaneously in parallel
+        const [movieP1, movieP2, tvP1, tvP2] = await Promise.all([
+          fetch(`https://api.themoviedb.org/3/search/movie?query=${targetQuery}&include_adult=false&language=en-US&page=1`, { headers }).then(r => r.ok ? r.json() : { results: [] }),
+          fetch(`https://api.themoviedb.org/3/search/movie?query=${targetQuery}&include_adult=false&language=en-US&page=2`, { headers }).then(r => r.ok ? r.json() : { results: [] }),
+          fetch(`https://api.themoviedb.org/3/search/tv?query=${targetQuery}&include_adult=false&language=en-US&page=1`, { headers }).then(r => r.ok ? r.json() : { results: [] }),
+          fetch(`https://api.themoviedb.org/3/search/tv?query=${targetQuery}&include_adult=false&language=en-US&page=2`, { headers }).then(r => r.ok ? r.json() : { results: [] })
+        ]);
 
-        if (!tmdbResponse.ok) return new Response(JSON.stringify({ error: "Upstream TMDB API error" }), { status: tmdbResponse.status });
+        const combinedMovies = [...(movieP1.results || []), ...(movieP2.results || [])].map((item: any) => ({ ...item, media_type: "movie" }));
+        const combinedTV = [...(tvP1.results || []), ...(tvP2.results || [])].map((item: any) => ({ ...item, media_type: "tv" }));
 
-        const data = await tmdbResponse.json();
-        const polishedResults = (data.results || [])
-          .filter((item: any) => item.media_type === "movie" || item.media_type === "tv")
-          .slice(0, 6)
+        // Merge, rank strictly by popularity score, and return top 30 clean matches
+        const allMedia = [...combinedMovies, ...combinedTV]
+          .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+          .slice(0, 30)
           .map((item: any) => {
             const resolvedGenres = item.genre_ids ? item.genre_ids.map((id: number) => TMDB_GENRES[id]).filter(Boolean) : ["Cinema"];
             const titleName = item.title || item.name;
@@ -206,7 +203,13 @@ export default {
             };
           });
 
-        return new Response(JSON.stringify(polishedResults), { status: 200, headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify(allMedia), { 
+          status: 200, 
+          headers: { 
+            "content-type": "application/json",
+            "Cache-Control": "no-cache, no-store, must-revalidate"
+          } 
+        });
       } catch (error: any) {
         return new Response(JSON.stringify({ error: error.message }), { status: 500 });
       }
