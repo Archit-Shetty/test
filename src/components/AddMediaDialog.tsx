@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useVault } from "@/lib/vault-store";
+import { useVault, type Movie } from "@/lib/vault-store";
 import { searchGameMetadata } from "@/lib/wiki-search";
 import { toast } from "sonner";
 import { Search, Loader2, ImageOff, ChevronLeft, Download, Music, Play, Square, Check, Tv, Film, Sparkles } from "lucide-react";
@@ -15,10 +15,11 @@ interface Props {
   kind: Kind;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  targetMovieToEditAudio?: Movie | null;
 }
 
-export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
-  const { addGame, addMovie } = useVault();
+export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudio }: Props) {
+  const { addGame, addMovie, updateMovie } = useVault();
   const [step, setStep] = useState<"search" | "details" | "audio">("search");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,6 +53,16 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
   const [selectedAudioTitle, setSelectedAudioTitle] = useState("");
   const [playingPreviewUrl, setPlayingPreviewUrl] = useState("");
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (targetMovieToEditAudio && open) {
+      setStep("audio");
+      setAudioQuery(targetMovieToEditAudio.title);
+      setSelectedAudioUrl(targetMovieToEditAudio.themeAudioUrl || "");
+      setSelectedAudioTitle(targetMovieToEditAudio.themeAudioTitle || "");
+      runAudioSearch(targetMovieToEditAudio.title);
+    }
+  }, [targetMovieToEditAudio, open]);
 
   const reset = () => {
     stopPreview();
@@ -166,7 +177,6 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
     if (r.year) setYear(String(r.year));
     setStep("details");
 
-    // Async background trailer fetch without blocking UI navigation
     if (kind === "movie" && r.title) {
       setFetchingTrailer(true);
       fetch(`/api/get-trailer?title=${encodeURIComponent(r.title)}`)
@@ -213,6 +223,16 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
   };
 
   const save = () => {
+    if (targetMovieToEditAudio) {
+      updateMovie(targetMovieToEditAudio.id, {
+        themeAudioUrl: selectedAudioUrl,
+        themeAudioTitle: selectedAudioTitle
+      });
+      toast.success("Updated theme soundtrack!");
+      close(false);
+      return;
+    }
+
     const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
     if (kind === "game") {
       addGame({
@@ -328,9 +348,9 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Year"><Input type="number" value={year} onChange={(e) => setYear(e.target.value)} className="bg-zinc-950 border-zinc-800 text-zinc-100" /></Field>
                   <div className="space-y-1.5">
-                    <Label className="font-display text-[10px] tracking-widest text-zinc-400 uppercase">YouTube Trailer Key</Label>
+                    <Label className="font-display text-[10px] tracking-widest text-zinc-400 uppercase">YouTube Trailer Key / Link</Label>
                     <div className="flex gap-2">
-                      <Input value={trailerKey} onChange={(e) => setTrailerKey(e.target.value)} placeholder="e.g. d9MyW72ELq0" className="bg-zinc-950 border-zinc-800 text-zinc-100 font-mono text-xs" />
+                      <Input value={trailerKey} onChange={(e) => setTrailerKey(e.target.value)} placeholder="e.g. d9MyW72ELq0 or URL" className="bg-zinc-950 border-zinc-800 text-zinc-100 font-mono text-xs" />
                       <Button 
                         type="button" 
                         size="sm" 
@@ -356,7 +376,9 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
 
         {step === "audio" && (
           <div className="space-y-4">
-            <button onClick={() => { stopPreview(); setStep("details"); }} className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 border-none bg-transparent cursor-pointer"><ChevronLeft className="h-3 w-3" /> back to details</button>
+            {!targetMovieToEditAudio && (
+              <button onClick={() => { stopPreview(); setStep("details"); }} className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 border-none bg-transparent cursor-pointer"><ChevronLeft className="h-3 w-3" /> back to details</button>
+            )}
             
             <form onSubmit={(e) => { e.preventDefault(); runAudioSearch(); }} className="flex gap-2">
               <Input placeholder="Search song name, artist, track theme..." value={audioQuery} onChange={(e) => setAudioQuery(e.target.value)} className="bg-zinc-950 border-zinc-800 text-zinc-100" />
@@ -392,10 +414,10 @@ export function AddMediaDialog({ kind, open, onOpenChange }: Props) {
             </div>
 
             <div className="flex items-center justify-between pt-4 border-t border-zinc-800">
-              <button onClick={() => { setSelectedAudioUrl(""); setSelectedAudioTitle(""); save(); }} className="text-xs text-zinc-500 hover:text-zinc-400 underline uppercase tracking-wider bg-transparent border-none outline-none cursor-pointer">Skip track / Add without audio</button>
+              <button onClick={() => { setSelectedAudioUrl(""); setSelectedAudioTitle(""); save(); }} className="text-xs text-zinc-500 hover:text-zinc-400 underline uppercase tracking-wider bg-transparent border-none outline-none cursor-pointer">Clear Track / Save empty</button>
               <div className="flex gap-2">
                 <Button variant="ghost" onClick={() => { stopPreview(); close(false); }} className="text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900">Cancel</Button>
-                <Button onClick={save} className="bg-cyan-500 text-black hover:bg-cyan-600 font-bold uppercase tracking-wider text-xs">Save to Vault</Button>
+                <Button onClick={save} className="bg-cyan-500 text-black hover:bg-cyan-600 font-bold uppercase tracking-wider text-xs">Save Update</Button>
               </div>
             </div>
           </div>

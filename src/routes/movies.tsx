@@ -5,7 +5,7 @@ import { AddMediaDialog } from "@/components/AddMediaDialog";
 import { useVault, type Movie } from "@/lib/vault-store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ImageOff, Trash2, ArrowLeft, Calendar, Film, Plus, Volume2, Tv, ExternalLink, Play, X } from "lucide-react";
+import { ImageOff, Trash2, ArrowLeft, Calendar, Film, Plus, Volume2, Tv, ExternalLink, Play, X, Music, RefreshCw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/movies")({
@@ -18,7 +18,6 @@ export const Route = createFileRoute("/movies")({
   component: MoviesPage,
 });
 
-// --- AUDIO INSTANCE & HOOK CONTROL ---
 let globalMovieAudioInstance: HTMLAudioElement | null = null;
 
 function playInstantMovieTheme(url: string | undefined) {
@@ -61,17 +60,23 @@ function playInstantMovieTheme(url: string | undefined) {
 }
 
 function MoviesPage() {
-  const { movies, removeMovie } = useVault();
+  const { movies, removeMovie, updateMovie } = useVault();
   const [addOpen, setAddOpen] = useState(false);
   const [selected, setSelected] = useState<Movie | null>(null);
 
-  // States for the cinematic transition
+  // Audio Edit State
+  const [editingAudioMovie, setEditingAudioMovie] = useState<Movie | null>(null);
+
+  // Cinematic States
   const [isProjecting, setIsProjecting] = useState(false);
   const [showFullView, setShowFullView] = useState(false);
   const [flyStyle, setFlyStyle] = useState<React.CSSProperties>({});
   
-  // State for YouTube Trailer Modal
+  // YouTube Trailer Player & Swap State
   const [showTrailerModal, setShowTrailerModal] = useState(false);
+  const [isFetchingTrailer, setIsFetchingTrailer] = useState(false);
+  const [showReplaceTrailerPrompt, setShowReplaceTrailerPrompt] = useState(false);
+  const [customTrailerInput, setCustomTrailerInput] = useState("");
 
   const targetImageRef = useRef<HTMLDivElement | null>(null);
 
@@ -137,7 +142,70 @@ function MoviesPage() {
     setShowFullView(false);
     setSelected(null);
     setShowTrailerModal(false);
+    setShowReplaceTrailerPrompt(false);
     setFlyStyle({});
+  };
+
+  // Direct Auto-Fetch Trailer
+  const handleInjectTrailerForSelected = async () => {
+    if (!selected) return;
+    setIsFetchingTrailer(true);
+    try {
+      const res = await fetch(`/api/get-trailer?title=${encodeURIComponent(selected.title)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.trailerKey) {
+          await updateMovie(selected.id, { trailerKey: data.trailerKey });
+          setSelected(prev => prev ? { ...prev, trailerKey: data.trailerKey } : null);
+          toast.success("Updated trailer key!");
+        } else {
+          toast.error("No trailer found");
+        }
+      }
+    } catch {
+      toast.error("Trailer lookup failed");
+    } finally {
+      setIsFetchingTrailer(false);
+      setShowReplaceTrailerPrompt(false);
+    }
+  };
+
+  // Extract YouTube Key helper (handles full URLs & plain keys)
+  const extractYTKey = (input: string) => {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = input.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : input.trim();
+  };
+
+  // Apply Manual Swap Trailer
+  const handleCustomTrailerSave = async () => {
+    if (!selected || !customTrailerInput.trim()) return;
+    const key = extractYTKey(customTrailerInput);
+    await updateMovie(selected.id, { trailerKey: key });
+    setSelected(prev => prev ? { ...prev, trailerKey: key } : null);
+    toast.success("Trailer key updated!");
+    setCustomTrailerInput("");
+    setShowReplaceTrailerPrompt(false);
+  };
+
+  // Remove Trailer Key
+  const handleRemoveTrailer = async () => {
+    if (!selected) return;
+    await updateMovie(selected.id, { trailerKey: "" });
+    setSelected(prev => prev ? { ...prev, trailerKey: "" } : null);
+    toast.success("Removed trailer link");
+  };
+
+  // Remove Audio Track
+  const handleRemoveAudio = async () => {
+    if (!selected) return;
+    if (globalMovieAudioInstance) {
+      globalMovieAudioInstance.pause();
+      globalMovieAudioInstance = null;
+    }
+    await updateMovie(selected.id, { themeAudioUrl: "", themeAudioTitle: "" });
+    setSelected(prev => prev ? { ...prev, themeAudioUrl: "", themeAudioTitle: "" } : null);
+    toast.success("Removed soundtrack theme");
   };
 
   useEffect(() => {
@@ -152,10 +220,21 @@ function MoviesPage() {
   return (
     <VaultShell>
       <div className="relative min-h-screen overflow-hidden bg-[#030208]">
-        {/* 🌌 Interactive Cosmic Starfield & Ambient Glow Background */}
+        {/* 🌌 Cosmic Starfield Background */}
         <InteractiveCosmicBackground />
 
-        {/* FLYING COVER TRANSITION ELEMENT */}
+        {/* 📌 PERMANENT FLOATING ACTION BUTTON (ALWAYS VISIBLE AT BOTTOM RIGHT) */}
+        {!showFullView && (
+          <button
+            onClick={() => setAddOpen(true)}
+            className="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-500 text-white font-black px-4 py-3.5 rounded-full shadow-[0_0_25px_rgba(6,182,212,0.5)] border border-cyan-300/30 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
+          >
+            <Plus className="h-5 w-5" />
+            <span className="text-xs font-display tracking-widest uppercase pr-1">Log Media</span>
+          </button>
+        )}
+
+        {/* FLYING COVER TRANSITION */}
         {isProjecting && selected && (
           <div style={flyStyle} className="rounded-xl border border-white/20 bg-black overflow-hidden pointer-events-none">
             {selected.coverUrl ? (
@@ -172,14 +251,13 @@ function MoviesPage() {
             isProjecting ? "opacity-20 blur-sm pointer-events-none" : "opacity-100 blur-none"
           } ${showFullView ? "hidden" : "block"}`}
         >
-          <header className="flex items-end justify-between mb-8 border border-white/10 bg-black/40 backdrop-blur-2xl p-6 rounded-2xl gap-4 shadow-[0_8px_32px_0_rgba(0,0,0,0.8)]">
+          <header className="flex items-center justify-between border border-white/10 bg-black/60 backdrop-blur-3xl p-5 rounded-2xl gap-4 shadow-[0_8px_32px_0_rgba(0,0,0,0.8)] mb-8">
             <div>
-              <div className="font-display text-[10px] tracking-widest text-cyan-400 mb-1 animate-pulse">// SYSTEM CORE MODULE 02</div>
-              <h1 className="text-3xl font-display flex items-center gap-3 text-white">
-                <Film className="h-7 w-7 text-cyan-400 animate-pulse" />
+              <div className="font-display text-[10px] tracking-widest text-cyan-400 mb-0.5 animate-pulse">// SYSTEM CORE MODULE 02</div>
+              <h1 className="text-2xl md:text-3xl font-display flex items-center gap-3 text-white">
+                <Film className="h-6 w-6 text-cyan-400 animate-pulse" />
                 Movie Theatre
               </h1>
-              <p className="text-sm text-zinc-300 mt-1">Private digital archive of logged movies, TV series, personal reviews, and scores.</p>
             </div>
             <Button onClick={() => setAddOpen(true)} className="bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-500 text-white font-black shadow-[0_0_20px_rgba(6,182,212,0.3)] border-none">
               <Plus className="h-4 w-4 mr-1.5" /> Log Media
@@ -230,7 +308,7 @@ function MoviesPage() {
                   )}
                 </div>
 
-                {/* 🛠️ ALIGNED VERTICAL DETAILS CONSOLE */}
+                {/* ALIGNED VERTICAL DETAILS CONSOLE */}
                 <div className={`flex flex-col justify-between space-y-6 transition-all duration-300 ${isProjecting ? "opacity-0 translate-x-4" : "opacity-100 translate-x-0"}`}>
                   <div className="space-y-5">
                     
@@ -239,7 +317,7 @@ function MoviesPage() {
                       <h2 className="font-display text-3xl md:text-4xl text-white tracking-tight leading-tight">{selected.title}</h2>
                     </div>
 
-                    {/* Line 2: Year & Heat-Score Rating & Theme Track Name */}
+                    {/* Line 2: Year & Heat-Score Rating & Theme Track Controls */}
                     <div className="flex flex-wrap items-center gap-3">
                       {selected.year && (
                         <span className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono border border-zinc-800 bg-zinc-900/40 rounded-md text-zinc-300 shadow-sm">
@@ -265,11 +343,24 @@ function MoviesPage() {
                         );
                       })()}
                       
-                      {selected.themeAudioUrl && (
-                        <span className="text-cyan-400 text-[10px] font-mono tracking-widest uppercase flex items-center gap-1.5 animate-pulse bg-cyan-950/30 border border-cyan-500/20 px-2.5 py-1 rounded-md max-w-xs truncate shadow-sm">
-                          <Volume2 className="h-3.5 w-3.5 shrink-0" /> 
-                          🎵 {selected.themeAudioTitle || "Theme Track Synced"}
-                        </span>
+                      {/* SOUNDTRACK SWAP / REMOVE CONTROL */}
+                      {selected.themeAudioUrl ? (
+                        <div className="flex items-center gap-1.5 bg-cyan-950/40 border border-cyan-500/30 px-2.5 py-1 rounded-md text-cyan-400 text-[10px] font-mono tracking-widest uppercase shadow-sm">
+                          <Volume2 className="h-3.5 w-3.5 shrink-0 animate-pulse" />
+                          <span className="max-w-[140px] truncate">🎵 {selected.themeAudioTitle || "Theme Track"}</span>
+                          <div className="flex items-center gap-1 pl-1 border-l border-cyan-500/20">
+                            <button onClick={() => { setEditingAudioMovie(selected); setAddOpen(true); }} className="hover:text-white transition-colors bg-transparent border-none p-0 cursor-pointer" title="Swap Audio Track">
+                              <RefreshCw className="h-3 w-3" />
+                            </button>
+                            <button onClick={handleRemoveAudio} className="hover:text-red-400 transition-colors bg-transparent border-none p-0 cursor-pointer" title="Remove Audio Track">
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setEditingAudioMovie(selected); setAddOpen(true); }} className="flex items-center gap-1.5 bg-zinc-900/60 border border-zinc-800 hover:border-cyan-500/40 px-2.5 py-1 rounded-md text-zinc-400 hover:text-cyan-400 text-[10px] font-mono tracking-widest uppercase transition-colors cursor-pointer">
+                          <Music className="h-3 w-3" /> Add Theme Music
+                        </button>
                       )}
                     </div>
                     
@@ -304,33 +395,64 @@ function MoviesPage() {
                       </div>
                     )}
 
-                    {/* 📺 Line 6: Direct Streaming & Trailer Triggers */}
+                    {/* 📺 Line 6: Direct Streaming & Trailer SWAP / REMOVE Actions */}
                     <div className="space-y-2 pt-2">
                       <div className="font-display text-[9px] tracking-widest text-zinc-500 uppercase flex items-center gap-1.5">
                         <Tv className="h-3 w-3 text-cyan-400" /> WATCH OPTIONS & MEDIA
                       </div>
                       <div className="flex flex-wrap gap-3 items-center">
-                        {/* 🎬 WATCH TRAILER BUTTON */}
-                        {selected.trailerKey && (
+                        {selected.trailerKey ? (
+                          <div className="flex items-center gap-1.5">
+                            {/* WATCH TRAILER */}
+                            <button
+                              onClick={() => {
+                                if (globalMovieAudioInstance) {
+                                  globalMovieAudioInstance.pause();
+                                }
+                                setShowTrailerModal(true);
+                              }}
+                              className="group/link flex items-center gap-2 bg-gradient-to-r from-red-600/20 to-rose-600/10 border border-red-500/40 hover:border-red-400 rounded-lg px-3.5 py-2 transition-all duration-200 shadow-md hover:scale-[1.02] cursor-pointer"
+                            >
+                              <div className="w-5 h-5 rounded bg-red-500 text-white flex items-center justify-center font-black text-[9px] shrink-0">
+                                <Play className="h-3 w-3 fill-current ml-0.5" />
+                              </div>
+                              <span className="text-[11px] font-display font-bold text-red-300 group-hover/link:text-white transition-colors uppercase tracking-wider">
+                                Watch Trailer
+                              </span>
+                            </button>
+
+                            {/* 🛠️ SWAP TRAILER BUTTON */}
+                            <button 
+                              onClick={() => setShowReplaceTrailerPrompt(true)} 
+                              className="p-2 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 hover:text-cyan-400 hover:border-cyan-500/40 transition-colors cursor-pointer" 
+                              title="Swap / Replace Trailer"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            </button>
+
+                            {/* REMOVE TRAILER BUTTON */}
+                            <button 
+                              onClick={handleRemoveTrailer} 
+                              className="p-2 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 hover:text-red-400 hover:border-red-500/30 transition-colors cursor-pointer" 
+                              title="Purge Trailer Link"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ) : (
                           <button
-                            onClick={() => {
-                              if (globalMovieAudioInstance) {
-                                globalMovieAudioInstance.pause();
-                              }
-                              setShowTrailerModal(true);
-                            }}
-                            className="group/link flex items-center gap-2 bg-gradient-to-r from-red-600/20 to-rose-600/10 border border-red-500/40 hover:border-red-400 rounded-lg px-3.5 py-2 transition-all duration-200 shadow-md hover:scale-[1.02] cursor-pointer"
+                            disabled={isFetchingTrailer}
+                            onClick={handleInjectTrailerForSelected}
+                            className="group/link flex items-center gap-2 bg-zinc-900/60 border border-zinc-800 hover:border-red-500/40 rounded-lg px-3.5 py-2 transition-all duration-200 cursor-pointer"
                           >
-                            <div className="w-5 h-5 rounded bg-red-500 text-white flex items-center justify-center font-black text-[9px] shrink-0">
-                              <Play className="h-3 w-3 fill-current ml-0.5" />
-                            </div>
-                            <span className="text-[11px] font-display font-bold text-red-300 group-hover/link:text-white transition-colors uppercase tracking-wider">
-                              Watch Trailer
+                            <Sparkles className="h-3.5 w-3.5 text-red-400" />
+                            <span className="text-[11px] font-display font-bold text-zinc-300 group-hover/link:text-red-400 transition-colors uppercase tracking-wider">
+                              {isFetchingTrailer ? "Locating Trailer..." : "Auto-Inject Trailer"}
                             </span>
                           </button>
                         )}
 
-                        {/* 🔍 GOOGLE STREAM FINDER LINK */}
+                        {/* GOOGLE STREAM FINDER LINK */}
                         <a
                           href={`https://www.google.com/search?q=where+to+watch+${encodeURIComponent(selected.title)}`}
                           target="_blank"
@@ -370,7 +492,37 @@ function MoviesPage() {
           </div>
         )}
 
-        {/* 🍿 POPUP EMBEDDED YOUTUBE TRAILER MODAL */}
+        {/* 🛠️ SWAP TRAILER MODAL PROMPT */}
+        {showReplaceTrailerPrompt && selected && (
+          <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+            <div className="bg-zinc-950 border border-zinc-800 p-6 rounded-2xl max-w-md w-full space-y-4 shadow-2xl">
+              <h3 className="text-sm font-display tracking-widest text-cyan-400 uppercase">Swap YouTube Trailer</h3>
+              <p className="text-xs text-zinc-400">Paste a new YouTube video URL or ID below, or auto-fetch using YouTube search.</p>
+              
+              <input
+                type="text"
+                placeholder="e.g. https://www.youtube.com/watch?v=d9MyW72ELq0"
+                value={customTrailerInput}
+                onChange={(e) => setCustomTrailerInput(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-xs text-zinc-100 font-mono outline-none focus:border-cyan-500"
+              />
+
+              <div className="flex flex-col gap-2 pt-2">
+                <Button onClick={handleCustomTrailerSave} disabled={!customTrailerInput.trim()} className="bg-cyan-500 text-black hover:bg-cyan-600 font-bold text-xs uppercase tracking-wider">
+                  Save Custom Trailer Link
+                </Button>
+                <Button onClick={handleInjectTrailerForSelected} disabled={isFetchingTrailer} variant="outline" className="border-zinc-800 text-zinc-300 hover:bg-zinc-900 text-xs uppercase tracking-wider">
+                  {isFetchingTrailer ? "Scraping..." : "Auto-Fetch & Replace via YouTube"}
+                </Button>
+                <Button onClick={() => setShowReplaceTrailerPrompt(false)} variant="ghost" className="text-zinc-500 text-xs">
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* POPUP EMBEDDED YOUTUBE TRAILER MODAL */}
         {showTrailerModal && selected?.trailerKey && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
             <div className="relative w-full max-w-4xl aspect-video rounded-xl overflow-hidden border border-white/10 bg-black shadow-2xl">
@@ -393,7 +545,15 @@ function MoviesPage() {
 
       </div>
 
-      <AddMediaDialog kind="movie" open={addOpen} onOpenChange={setAddOpen} />
+      <AddMediaDialog 
+        kind="movie" 
+        open={addOpen} 
+        onOpenChange={(val) => {
+          setAddOpen(val);
+          if (!val) setEditingAudioMovie(null);
+        }}
+        targetMovieToEditAudio={editingAudioMovie}
+      />
     </VaultShell>
   );
 }
@@ -468,9 +628,6 @@ function TheatreSpotlightCard({ movie, onSelect, glowClass, hidden }: { movie: M
   );
 }
 
-/**
- * 🌌 INTERACTIVE COSMIC STARFIELD & AMBIENT NEBULA CANVAS
- */
 function InteractiveCosmicBackground() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mouseRef = useRef({ x: -1000, y: -1000 });
@@ -485,7 +642,6 @@ function InteractiveCosmicBackground() {
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
 
-    // Create interactive particle field
     const stars: Array<{ x: number; y: number; vx: number; vy: number; radius: number; baseAlpha: number; color: string }> = [];
     const starColors = ["#06b6d4", "#3b82f6", "#818cf8", "#e0e7ff", "#f43f5e"];
     const totalStars = 100;
@@ -520,11 +676,9 @@ function InteractiveCosmicBackground() {
     const render = () => {
       tick += 0.002;
       
-      // Deep space canvas clearing
       ctx.fillStyle = "#030208";
       ctx.fillRect(0, 0, width, height);
 
-      // Render drifting ambient background nebulae
       const neb1X = width * 0.3 + Math.sin(tick) * 80;
       const neb1Y = height * 0.3 + Math.cos(tick * 0.8) * 60;
       const grad1 = ctx.createRadialGradient(neb1X, neb1Y, 50, neb1X, neb1Y, width * 0.5);
@@ -543,7 +697,6 @@ function InteractiveCosmicBackground() {
       ctx.fillStyle = grad2;
       ctx.fillRect(0, 0, width, height);
 
-      // Render interactive star particles
       const mouse = mouseRef.current;
       stars.forEach((star) => {
         star.x += star.vx;
@@ -554,7 +707,6 @@ function InteractiveCosmicBackground() {
         if (star.y < 0) star.y = height;
         if (star.y > height) star.y = 0;
 
-        // Calculate proximity to mouse cursor for gentle gravitational push/glow effect
         const dx = mouse.x - star.x;
         const dy = mouse.y - star.y;
         const dist = Math.sqrt(dx * dx + dy * dy);

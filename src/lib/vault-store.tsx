@@ -1,5 +1,3 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-
 export interface Game {
   id: string;
   title: string;
@@ -31,8 +29,8 @@ export interface Movie {
   loggedAt: string;
   themeAudioUrl?: string;
   themeAudioTitle?: string;
-  watchProviders?: WatchProvider[]; // 🎬 Stores streaming logos cleanly!
-  trailerKey?: string; // 🎬 Stores YouTube Trailer Video Key
+  watchProviders?: WatchProvider[];
+  trailerKey?: string;
 }
 
 export interface Track {
@@ -62,6 +60,7 @@ interface VaultData {
 interface VaultContextValue extends VaultData {
   addGame: (g: Omit<Game, "id">) => void;
   addMovie: (m: Omit<Movie, "id" | "loggedAt">) => void;
+  updateMovie: (id: string, updates: Partial<Movie>) => Promise<void>;
   addPlaylist: (p: Omit<Playlist, "id">) => void;
   removeGame: (id: string) => void;
   removeMovie: (id: string) => void;
@@ -69,8 +68,6 @@ interface VaultContextValue extends VaultData {
   addTrackToPlaylist: (playlistId: string, track: Track) => Promise<void>;
   removeTrackFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
   refreshVault: () => Promise<void>;
-  
-  // 🎧 Global Background Playback State Hooks
   currentTrack: Track | null;
   activePlaylist: Playlist | null;
   isPlaying: boolean;
@@ -81,12 +78,12 @@ interface VaultContextValue extends VaultData {
   prevTrack: () => void;
 }
 
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+
 const VaultContext = createContext<VaultContextValue | null>(null);
 
 export function VaultProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<VaultData>({ games: [], movies: [], playlists: [] });
-  
-  // 🎧 Jukebox Playback States
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [activePlaylist, setActivePlaylist] = useState<Playlist | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -104,155 +101,97 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         });
       }
     } catch (err) {
-      console.error("Failed to fetch data streams from MongoDB cluster:", err);
+      console.error(err);
     }
   };
 
-  useEffect(() => {
-    refreshVault();
-  }, []);
+  useEffect(() => { refreshVault(); }, []);
 
   const addGame = async (g: Omit<Game, "id">) => {
-    try {
-      const res = await fetch("/api/vault", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "game", data: g })
-      });
-      if (res.ok) refreshVault();
-    } catch (err) {
-      console.error("Database save error:", err);
-    }
+    const res = await fetch("/api/vault", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "game", data: g }) });
+    if (res.ok) refreshVault();
   };
 
   const addMovie = async (m: Omit<Movie, "id" | "loggedAt">) => {
+    const res = await fetch("/api/vault", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "movie", data: m }) });
+    if (res.ok) refreshVault();
+  };
+
+  // 🛠️ UPDATE MOVIE WITHOUT DUPLICATION (HTTP PUT + Optimistic UI Update)
+  const updateMovie = async (id: string, updates: Partial<Movie>) => {
+    setData((prev) => ({
+      ...prev,
+      movies: prev.movies.map((m) => (m.id === id ? { ...m, ...updates } : m))
+    }));
+
     try {
       const res = await fetch("/api/vault", {
-        method: "POST",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "movie", data: m })
+        body: JSON.stringify({ type: "movie", id, data: updates })
       });
-      if (res.ok) refreshVault();
+      if (res.ok) {
+        refreshVault();
+      }
     } catch (err) {
-      console.error("Database save error:", err);
+      console.error("Failed to update movie record:", err);
     }
   };
 
   const addPlaylist = async (p: Omit<Playlist, "id">) => {
-    try {
-      const res = await fetch("/api/vault", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "playlist", data: p })
-      });
-      if (res.ok) refreshVault();
-    } catch (err) {
-      console.error("Database save error:", err);
-    }
+    const res = await fetch("/api/vault", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "playlist", data: p }) });
+    if (res.ok) refreshVault();
   };
 
   const removeGame = async (id: string) => {
-    try {
-      const res = await fetch("/api/vault", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "game", id })
-      });
-      if (res.ok) refreshVault();
-    } catch (err) {
-      console.error("Database delete action failure:", err);
-    }
+    const res = await fetch("/api/vault", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "game", id }) });
+    if (res.ok) refreshVault();
   };
 
   const removeMovie = async (id: string) => {
-    try {
-      const res = await fetch("/api/vault", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "movie", id })
-      });
-      if (res.ok) refreshVault();
-    } catch (err) {
-      console.error("Database delete action failure:", err);
-    }
+    const res = await fetch("/api/vault", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "movie", id }) });
+    if (res.ok) refreshVault();
   };
 
   const removePlaylist = async (id: string) => {
-    try {
-      const res = await fetch("/api/vault", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "playlist", id })
-      });
-      if (res.ok) refreshVault();
-    } catch (err) {
-      console.error("Database delete action failure:", err);
-    }
+    const res = await fetch("/api/vault", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "playlist", id }) });
+    if (res.ok) refreshVault();
   };
 
   const addTrackToPlaylist = async (playlistId: string, track: Track) => {
-    try {
-      const res = await fetch("/api/vault/playlists/tracks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playlistId, action: "add", track })
-      });
-      if (res.ok) refreshVault();
-    } catch (err) {
-      console.error("Failed to add track:", err);
-    }
+    const res = await fetch("/api/vault/playlists/tracks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playlistId, action: "add", track }) });
+    if (res.ok) refreshVault();
   };
 
   const removeTrackFromPlaylist = async (playlistId: string, trackId: string) => {
-    try {
-      const res = await fetch("/api/vault/playlists/tracks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playlistId, action: "remove", trackId })
-      });
-      if (res.ok) refreshVault();
-    } catch (err) {
-      console.error("Failed to remove track:", err);
-    }
+    const res = await fetch("/api/vault/playlists/tracks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playlistId, action: "remove", trackId }) });
+    if (res.ok) refreshVault();
   };
 
-  // 🎧 Global audio player command structures
-  const playTrackDirectly = (track: Track) => {
-    setActivePlaylist(null);
-    setCurrentTrack(track);
-    setIsPlaying(true);
-  };
-
+  const playTrackDirectly = (track: Track) => { setActivePlaylist(null); setCurrentTrack(track); setIsPlaying(true); };
   const playPlaylistDirectly = (playlist: Playlist, startTrackIndex = 0) => {
     if (!playlist.tracks || playlist.tracks.length === 0) return;
-    setActivePlaylist(playlist);
-    setTrackIndex(startTrackIndex);
-    setCurrentTrack(playlist.tracks[startTrackIndex]);
-    setIsPlaying(true);
+    setActivePlaylist(playlist); setTrackIndex(startTrackIndex); setCurrentTrack(playlist.tracks[startTrackIndex]); setIsPlaying(true);
   };
-
   const nextTrack = () => {
     if (!activePlaylist || activePlaylist.tracks.length <= 1) return;
     const nextIdx = (trackIndex + 1) % activePlaylist.tracks.length;
-    setTrackIndex(nextIdx);
-    setCurrentTrack(activePlaylist.tracks[nextIdx]);
+    setTrackIndex(nextIdx); setCurrentTrack(activePlaylist.tracks[nextIdx]);
   };
-
   const prevTrack = () => {
     if (!activePlaylist || activePlaylist.tracks.length <= 1) return;
     const prevIdx = trackIndex === 0 ? activePlaylist.tracks.length - 1 : trackIndex - 1;
-    setTrackIndex(prevIdx);
-    setCurrentTrack(activePlaylist.tracks[prevIdx]);
+    setTrackIndex(prevIdx); setCurrentTrack(activePlaylist.tracks[prevIdx]);
   };
 
   return (
     <VaultContext.Provider value={{ 
-      ...data, addGame, addMovie, addPlaylist, removeGame, removeMovie, removePlaylist, 
+      ...data, addGame, addMovie, updateMovie, addPlaylist, removeGame, removeMovie, removePlaylist, 
       addTrackToPlaylist, removeTrackFromPlaylist, refreshVault,
       currentTrack, activePlaylist, isPlaying, playTrackDirectly, playPlaylistDirectly,
       setIsPlaying, nextTrack, prevTrack
     }}>
-      {data.playlists && children}
+      {children}
     </VaultContext.Provider>
   );
 }
