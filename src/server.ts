@@ -115,7 +115,7 @@ export default {
       }
     }
 
-// --- 🎬 ROUTE: DIRECT YOUTUBE TRAILER AUTO-SCRAPER ---
+// --- 🎬 ROUTE A: DIRECT YOUTUBE TRAILER AUTO-SCRAPER ---
     if (url.pathname === '/api/get-trailer') {
       try {
         const title = url.searchParams.get('title');
@@ -123,6 +123,7 @@ export default {
 
         const ytSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + " official trailer")}`;
         const ytResponse = await fetch(ytSearchUrl, {
+          signal: AbortSignal.timeout(4000), // 4-second hard cutoff
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9'
@@ -146,7 +147,7 @@ export default {
       }
     }
 
-    // --- 🚀 ROUTE B: INSTANT TMDB MULTI-SEARCH PROXY (PARALLEL RACING) ---
+    // --- 🚀 ROUTE B: INSTANT & RELIABLE TMDB SEARCH (UP TO 20 RESULTS) ---
     if (url.pathname === '/api/search-movies') {
       try {
         const query = url.searchParams.get('query') || url.searchParams.get('q');
@@ -156,7 +157,7 @@ export default {
         const tmdbToken = rawToken ? String(rawToken).replace(/[\r\n"'\s\[\]]/g, '').trim() : "";
 
         if (!tmdbToken || tmdbToken.length < 10) {
-          return new Response(JSON.stringify({ error: "TMDb access token missing from configuration environment." }), { status: 500 });
+          return new Response(JSON.stringify({ error: "TMDb access token missing from environment." }), { status: 500 });
         }
 
         const TMDB_GENRES: Record<number, string> = {
@@ -173,27 +174,35 @@ export default {
         const targetQuery = encodeURIComponent(query);
         const headers = { 'Authorization': `Bearer ${tmdbToken}`, 'Accept': 'application/json' };
 
-        // 🏎️ RACE BOTH ENDPOINTS IN PARALLEL - Resolves whichever responds first!
-        const fetchEndpoint = async (domain: string) => {
-          const res = await fetch(`https://${domain}/3/search/multi?query=${targetQuery}&include_adult=false&language=en-US&page=1`, { headers });
-          if (!res.ok) throw new Error(`Failed ${domain}`);
-          return res;
-        };
-
-        let tmdbResponse: Response;
+        let tmdbResponse: Response | null = null;
         try {
-          tmdbResponse = await Promise.any([
-            fetchEndpoint('api.themoviedb.org'),
-            fetchEndpoint('api.tmdb.org')
-          ]);
+          tmdbResponse = await fetch(`https://api.themoviedb.org/3/search/multi?query=${targetQuery}&include_adult=false&language=en-US&page=1`, {
+            headers,
+            signal: AbortSignal.timeout(5000) // 5s timeout prevents hanging requests
+          });
         } catch {
-          return new Response(JSON.stringify({ error: "All TMDb endpoints failed" }), { status: 502 });
+          // Secondary fallback domain if primary DNS stalls out
+          try {
+            tmdbResponse = await fetch(`https://api.tmdb.org/3/search/multi?query=${targetQuery}&include_adult=false&language=en-US&page=1`, {
+              headers,
+              signal: AbortSignal.timeout(5000)
+            });
+          } catch {
+            return new Response(JSON.stringify({ error: "TMDb request timed out." }), { status: 504 });
+          }
+        }
+
+        if (!tmdbResponse || !tmdbResponse.ok) {
+          return new Response(JSON.stringify({ error: "Upstream TMDb API error" }), { status: tmdbResponse?.status || 500 });
         }
 
         const data = await tmdbResponse.json();
+        
+        // Filter out actors/crew ("person"), sort by popularity score, and return top 20 clean items
         const polishedResults = (data.results || [])
           .filter((item: any) => item.media_type === "movie" || item.media_type === "tv")
-          .slice(0, 6)
+          .sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0))
+          .slice(0, 20)
           .map((item: any) => {
             const resolvedGenres = item.genre_ids ? item.genre_ids.map((id: number) => TMDB_GENRES[id]).filter(Boolean) : ["Cinema"];
             const titleName = item.title || item.name;
@@ -213,7 +222,7 @@ export default {
           status: 200, 
           headers: { 
             "content-type": "application/json",
-            "Cache-Control": "public, max-age=3600" // Cache results to eliminate repeat latency
+            "Cache-Control": "no-store, no-cache, must-revalidate"
           } 
         });
       } catch (error: any) {

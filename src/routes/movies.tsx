@@ -12,7 +12,7 @@ export const Route = createFileRoute("/movies")({
   head: () => ({
     meta: [
       { title: "Movie Theatre · Media Vault" },
-      { name: "description", content: "Private digital archive of logged movies, personal reviews, and scores." },
+      { name: "description", content: "Private digital archive of logged movies, TV series, personal reviews, and scores." },
     ],
   }),
   component: MoviesPage,
@@ -430,7 +430,6 @@ function TheatreSpotlightCard({ movie, onSelect, glowClass, hidden }: { movie: M
           <div className="flex items-center justify-center h-full text-zinc-500 bg-zinc-900/30"><ImageOff className="h-6 w-6" /></div>
         )}
 
-        {/* Shifting Spotlight Lens Flare */}
         <div 
           style={{
             background: lightCoords.active 
