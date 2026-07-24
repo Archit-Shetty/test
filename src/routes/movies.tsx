@@ -65,7 +65,7 @@ function MoviesPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [selected, setSelected] = useState<Movie | null>(null);
 
-  // States for the cinematic projector transition
+  // States for the cinematic transition
   const [isProjecting, setIsProjecting] = useState(false);
   const [showFullView, setShowFullView] = useState(false);
   const [flyStyle, setFlyStyle] = useState<React.CSSProperties>({});
@@ -151,9 +151,9 @@ function MoviesPage() {
 
   return (
     <VaultShell>
-      <div className="relative min-h-screen overflow-hidden bg-[#020105]">
-        {/* 🎬 Live Interactive Projector Cone & Particle Environment */}
-        <InteractiveProjectorBackground />
+      <div className="relative min-h-screen overflow-hidden bg-[#030208]">
+        {/* 🌌 Interactive Cosmic Starfield & Ambient Glow Background */}
+        <InteractiveCosmicBackground />
 
         {/* FLYING COVER TRANSITION ELEMENT */}
         {isProjecting && selected && (
@@ -172,7 +172,7 @@ function MoviesPage() {
             isProjecting ? "opacity-20 blur-sm pointer-events-none" : "opacity-100 blur-none"
           } ${showFullView ? "hidden" : "block"}`}
         >
-          <header className="flex items-end justify-between mb-8 border-b border-white/10 bg-black/50 backdrop-blur-2xl p-6 rounded-xl gap-4 shadow-[0_8px_32px_0_rgba(0,0,0,0.6)]">
+          <header className="flex items-end justify-between mb-8 border border-white/10 bg-black/40 backdrop-blur-2xl p-6 rounded-2xl gap-4 shadow-[0_8px_32px_0_rgba(0,0,0,0.8)]">
             <div>
               <div className="font-display text-[10px] tracking-widest text-cyan-400 mb-1 animate-pulse">// SYSTEM CORE MODULE 02</div>
               <h1 className="text-3xl font-display flex items-center gap-3 text-white">
@@ -468,9 +468,12 @@ function TheatreSpotlightCard({ movie, onSelect, glowClass, hidden }: { movie: M
   );
 }
 
-function InteractiveProjectorBackground() {
+/**
+ * 🌌 INTERACTIVE COSMIC STARFIELD & AMBIENT NEBULA CANVAS
+ */
+function InteractiveCosmicBackground() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const mouseRef = useRef({ x: 0, y: 0 });
+  const mouseRef = useRef({ x: -1000, y: -1000 });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -482,20 +485,20 @@ function InteractiveProjectorBackground() {
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
 
-    mouseRef.current = { x: width / 2, y: height * 0.7 };
+    // Create interactive particle field
+    const stars: Array<{ x: number; y: number; vx: number; vy: number; radius: number; baseAlpha: number; color: string }> = [];
+    const starColors = ["#06b6d4", "#3b82f6", "#818cf8", "#e0e7ff", "#f43f5e"];
+    const totalStars = 100;
 
-    const motes: Array<{ x: number; y: number; vx: number; vy: number; radius: number; baseAlpha: number; phase: number }> = [];
-    const totalMotes = 65;
-
-    for (let i = 0; i < totalMotes; i++) {
-      motes.push({
+    for (let i = 0; i < totalStars; i++) {
+      stars.push({
         x: Math.random() * width,
         y: Math.random() * height,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: -(Math.random() * 0.2 + 0.1),
-        radius: Math.random() * 1.5 + 0.5,
-        baseAlpha: Math.random() * 0.5 + 0.1,
-        phase: Math.random() * Math.PI * 2
+        vx: (Math.random() - 0.5) * 0.2,
+        vy: (Math.random() - 0.5) * 0.2,
+        radius: Math.random() * 1.4 + 0.3,
+        baseAlpha: Math.random() * 0.6 + 0.2,
+        color: starColors[Math.floor(Math.random() * starColors.length)]
       });
     }
 
@@ -515,64 +518,63 @@ function InteractiveProjectorBackground() {
 
     let tick = 0;
     const render = () => {
-      tick += 0.005;
+      tick += 0.002;
       
-      ctx.fillStyle = "#020105";
+      // Deep space canvas clearing
+      ctx.fillStyle = "#030208";
       ctx.fillRect(0, 0, width, height);
 
-      const sourceX = width / 2;
-      const sourceY = -20; 
-      const target = mouseRef.current;
+      // Render drifting ambient background nebulae
+      const neb1X = width * 0.3 + Math.sin(tick) * 80;
+      const neb1Y = height * 0.3 + Math.cos(tick * 0.8) * 60;
+      const grad1 = ctx.createRadialGradient(neb1X, neb1Y, 50, neb1X, neb1Y, width * 0.5);
+      grad1.addColorStop(0, "rgba(6, 182, 212, 0.08)");
+      grad1.addColorStop(0.5, "rgba(59, 130, 246, 0.03)");
+      grad1.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = grad1;
+      ctx.fillRect(0, 0, width, height);
 
-      const angle = Math.atan2(target.y - sourceY, target.x - sourceX);
-      const coneLength = Math.max(width, height) * 1.2;
-      const coneSpread = 0.22; 
+      const neb2X = width * 0.7 + Math.cos(tick * 0.6) * 90;
+      const neb2Y = height * 0.7 + Math.sin(tick * 0.9) * 70;
+      const grad2 = ctx.createRadialGradient(neb2X, neb2Y, 50, neb2X, neb2Y, width * 0.5);
+      grad2.addColorStop(0, "rgba(129, 140, 248, 0.06)");
+      grad2.addColorStop(0.5, "rgba(236, 72, 153, 0.02)");
+      grad2.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = grad2;
+      ctx.fillRect(0, 0, width, height);
 
-      const leftAngle = angle - coneSpread;
-      const rightAngle = angle + coneSpread;
+      // Render interactive star particles
+      const mouse = mouseRef.current;
+      stars.forEach((star) => {
+        star.x += star.vx;
+        star.y += star.vy;
 
-      ctx.beginPath();
-      ctx.moveTo(sourceX, sourceY);
-      ctx.lineTo(sourceX + Math.cos(leftAngle) * coneLength, sourceY + Math.sin(leftAngle) * coneLength);
-      ctx.lineTo(sourceX + Math.cos(rightAngle) * coneLength, sourceY + Math.sin(rightAngle) * coneLength);
-      ctx.closePath();
+        if (star.x < 0) star.x = width;
+        if (star.x > width) star.x = 0;
+        if (star.y < 0) star.y = height;
+        if (star.y > height) star.y = 0;
 
-      const lightGradient = ctx.createRadialGradient(sourceX, sourceY, 20, sourceX, sourceY, coneLength * 0.8);
-      lightGradient.addColorStop(0, "rgba(6, 182, 212, 0.18)"); 
-      lightGradient.addColorStop(0.3, "rgba(59, 130, 246, 0.06)"); 
-      lightGradient.addColorStop(1, "rgba(0,0,0,0)");
-
-      ctx.fillStyle = lightGradient;
-      ctx.fill();
-
-      motes.forEach((m) => {
-        m.x += m.vx;
-        m.y += m.vy;
-        m.phase += 0.01;
-
-        if (m.y < 0) { m.y = height; m.x = Math.random() * width; }
-        if (m.x < 0) m.x = width;
-        if (m.x > width) m.x = 0;
-
-        const moteAngle = Math.atan2(m.y - sourceY, m.x - sourceX);
-        let diff = moteAngle - angle;
+        // Calculate proximity to mouse cursor for gentle gravitational push/glow effect
+        const dx = mouse.x - star.x;
+        const dy = mouse.y - star.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const maxDist = 180;
         
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        while (diff > Math.PI) diff -= Math.PI * 2;
+        let currentAlpha = star.baseAlpha;
+        let currentRadius = star.radius;
 
-        const isInsideCone = Math.abs(diff) < coneSpread;
-        
-        const sineWaveAlpha = m.baseAlpha + Math.sin(m.phase) * 0.15;
-        const targetAlpha = isInsideCone ? sineWaveAlpha : sineWaveAlpha * 0.12;
+        if (dist < maxDist) {
+          const factor = (1 - dist / maxDist);
+          currentAlpha = Math.min(1, star.baseAlpha + factor * 0.6);
+          currentRadius = star.radius + factor * 1.5;
+        }
 
         ctx.beginPath();
-        ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2);
-        
-        ctx.fillStyle = isInsideCone 
-          ? `rgba(207, 250, 254, ${targetAlpha})`
-          : `rgba(59, 130, 246, ${targetAlpha * 0.4})`;
-          
+        ctx.arc(star.x, star.y, currentRadius, 0, Math.PI * 2);
+        ctx.fillStyle = star.color;
+        ctx.globalAlpha = currentAlpha;
         ctx.fill();
+        ctx.globalAlpha = 1;
       });
 
       animationId = requestAnimationFrame(render);
