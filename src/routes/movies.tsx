@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { VaultShell } from "@/components/VaultShell";
 import { AddMediaDialog } from "@/components/AddMediaDialog";
 import { useVault, type Movie } from "@/lib/vault-store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ImageOff, Trash2, ArrowLeft, Calendar, Film, Plus, Volume2, Tv, ExternalLink, Play, X, Music, RefreshCw, Sparkles } from "lucide-react";
+import { ImageOff, Trash2, ArrowLeft, Calendar, Film, Plus, Volume2, Tv, ExternalLink, Play, X, Music, RefreshCw, Sparkles, Search, SlidersHorizontal, CheckCircle2, Bookmark } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/movies")({
@@ -64,6 +64,12 @@ function MoviesPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [selected, setSelected] = useState<Movie | null>(null);
 
+  // 📌 BATCH 2: FILTER & SORT STATES
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "watched" | "watchlist">("all");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "movie" | "tv">("all");
+  const [sortBy, setSortBy] = useState<"rating" | "year" | "recent">("recent");
+
   // Audio Edit State
   const [editingAudioMovie, setEditingAudioMovie] = useState<Movie | null>(null);
 
@@ -79,6 +85,46 @@ function MoviesPage() {
   const [customTrailerInput, setCustomTrailerInput] = useState("");
 
   const targetImageRef = useRef<HTMLDivElement | null>(null);
+
+  // 📌 BATCH 2: REAL-TIME FILTERING & SORTING ENGINE
+  const filteredMovies = useMemo(() => {
+    return movies
+      .filter((m) => {
+        // Text Search (title, tags, review)
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const matchTitle = m.title.toLowerCase().includes(q);
+          const matchReview = m.review?.toLowerCase().includes(q);
+          const matchTags = m.tags?.some((t) => t.toLowerCase().includes(q));
+          if (!matchTitle && !matchReview && !matchTags) return false;
+        }
+
+        // Status Filter
+        const movieStatus = m.status || "watched";
+        if (statusFilter === "watched" && movieStatus !== "watched") return false;
+        if (statusFilter === "watchlist" && movieStatus !== "watchlist") return false;
+
+        // Category Filter
+        const tags = m.tags?.map((t) => t.toLowerCase()) || [];
+        const isTV = tags.includes("tv series") || tags.includes("tv");
+        if (categoryFilter === "tv" && !isTV) return false;
+        if (categoryFilter === "movie" && isTV) return false;
+
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === "rating") {
+          const rA = parseFloat(a.rating) || 0;
+          const rB = parseFloat(b.rating) || 0;
+          return rB - rA;
+        }
+        if (sortBy === "year") {
+          return (b.year || 0) - (a.year || 0);
+        }
+        // Recent
+        return new Date(b.loggedAt || 0).getTime() - new Date(a.loggedAt || 0).getTime();
+      });
+  }, [movies, searchQuery, statusFilter, categoryFilter, sortBy]);
 
   const getMovieGlowClass = (ratingStr: string) => {
     if (!ratingStr) return "group-hover:shadow-[0_0_25px_rgba(6,182,212,0.3)] border-white/10";
@@ -146,7 +192,15 @@ function MoviesPage() {
     setFlyStyle({});
   };
 
-  // Direct Auto-Fetch Trailer
+  // 📌 BATCH 2: TOGGLE WATCH STATE ACTION
+  const handleToggleWatchState = async () => {
+    if (!selected) return;
+    const nextStatus = (selected.status || "watched") === "watched" ? "watchlist" : "watched";
+    await updateMovie(selected.id, { status: nextStatus });
+    setSelected((prev) => (prev ? { ...prev, status: nextStatus } : null));
+    toast.success(`Marked as ${nextStatus === "watchlist" ? "Watchlist" : "Watched"}`);
+  };
+
   const handleInjectTrailerForSelected = async () => {
     if (!selected) return;
     setIsFetchingTrailer(true);
@@ -170,14 +224,12 @@ function MoviesPage() {
     }
   };
 
-  // Extract YouTube Key helper (handles full URLs & plain keys)
   const extractYTKey = (input: string) => {
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
     const match = input.match(regExp);
     return (match && match[2].length === 11) ? match[2] : input.trim();
   };
 
-  // Apply Manual Swap Trailer
   const handleCustomTrailerSave = async () => {
     if (!selected || !customTrailerInput.trim()) return;
     const key = extractYTKey(customTrailerInput);
@@ -188,7 +240,6 @@ function MoviesPage() {
     setShowReplaceTrailerPrompt(false);
   };
 
-  // Remove Trailer Key
   const handleRemoveTrailer = async () => {
     if (!selected) return;
     await updateMovie(selected.id, { trailerKey: "" });
@@ -196,7 +247,6 @@ function MoviesPage() {
     toast.success("Removed trailer link");
   };
 
-  // Remove Audio Track
   const handleRemoveAudio = async () => {
     if (!selected) return;
     if (globalMovieAudioInstance) {
@@ -223,7 +273,7 @@ function MoviesPage() {
         {/* 🌌 Cosmic Starfield Background */}
         <InteractiveCosmicBackground />
 
-        {/* 📌 PERMANENT FLOATING ACTION BUTTON (ALWAYS VISIBLE AT BOTTOM RIGHT) */}
+        {/* PERMANENT FLOATING ACTION BUTTON */}
         {!showFullView && (
           <button
             onClick={() => setAddOpen(true)}
@@ -251,24 +301,125 @@ function MoviesPage() {
             isProjecting ? "opacity-20 blur-sm pointer-events-none" : "opacity-100 blur-none"
           } ${showFullView ? "hidden" : "block"}`}
         >
-          <header className="flex items-center justify-between border border-white/10 bg-black/60 backdrop-blur-3xl p-5 rounded-2xl gap-4 shadow-[0_8px_32px_0_rgba(0,0,0,0.8)] mb-8">
-            <div>
-              <div className="font-display text-[10px] tracking-widest text-cyan-400 mb-0.5 animate-pulse">// SYSTEM CORE MODULE 02</div>
-              <h1 className="text-2xl md:text-3xl font-display flex items-center gap-3 text-white">
-                <Film className="h-6 w-6 text-cyan-400 animate-pulse" />
-                Movie Theatre
-              </h1>
+          {/* 📌 BATCH 2: INTEGRATED HEADER SEARCH & CONTROL STRIP */}
+          <header className="sticky top-4 z-30 border border-white/10 bg-black/60 backdrop-blur-3xl p-4 md:p-5 rounded-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.8)] mb-8 transition-all space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="font-display text-[10px] tracking-widest text-cyan-400 mb-0.5 animate-pulse">// SYSTEM CORE MODULE 02</div>
+                <h1 className="text-2xl font-display flex items-center gap-2 text-white">
+                  <Film className="h-6 w-6 text-cyan-400 animate-pulse" />
+                  Movie Theatre
+                </h1>
+              </div>
+
+              {/* Instant Search Bar */}
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                <input
+                  type="text"
+                  placeholder="Filter by title, actor, review, genre tags..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-zinc-950/80 border border-zinc-800 rounded-xl pl-9 pr-8 py-2 text-xs text-zinc-200 outline-none focus:border-cyan-500/60 transition-colors"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white bg-transparent border-none cursor-pointer">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
-            <Button onClick={() => setAddOpen(true)} className="bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-500 text-white font-black shadow-[0_0_20px_rgba(6,182,212,0.3)] border-none">
-              <Plus className="h-4 w-4 mr-1.5" /> Log Media
-            </Button>
+
+            {/* Filter Tabs & Sorting Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/5">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Watch State Filter Pills */}
+                <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-800">
+                  <button
+                    onClick={() => setStatusFilter("all")}
+                    className={`px-3 py-1 text-[10px] font-display uppercase tracking-wider rounded-md transition-all cursor-pointer ${
+                      statusFilter === "all" ? "bg-cyan-500 text-black font-bold" : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    All ({movies.length})
+                  </button>
+                  <button
+                    onClick={() => setStatusFilter("watched")}
+                    className={`px-3 py-1 text-[10px] font-display uppercase tracking-wider rounded-md transition-all cursor-pointer ${
+                      statusFilter === "watched" ? "bg-emerald-500 text-black font-bold" : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    Watched
+                  </button>
+                  <button
+                    onClick={() => setStatusFilter("watchlist")}
+                    className={`px-3 py-1 text-[10px] font-display uppercase tracking-wider rounded-md transition-all cursor-pointer ${
+                      statusFilter === "watchlist" ? "bg-amber-500 text-black font-bold" : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    Watchlist
+                  </button>
+                </div>
+
+                {/* Category Pills */}
+                <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-800">
+                  <button
+                    onClick={() => setCategoryFilter("all")}
+                    className={`px-2.5 py-1 text-[10px] font-display uppercase tracking-wider rounded-md transition-all cursor-pointer ${
+                      categoryFilter === "all" ? "bg-zinc-800 text-white font-bold" : "text-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    All Types
+                  </button>
+                  <button
+                    onClick={() => setCategoryFilter("movie")}
+                    className={`px-2.5 py-1 text-[10px] font-display uppercase tracking-wider rounded-md transition-all cursor-pointer ${
+                      categoryFilter === "movie" ? "bg-zinc-800 text-amber-300 font-bold" : "text-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    Movies
+                  </button>
+                  <button
+                    onClick={() => setCategoryFilter("tv")}
+                    className={`px-2.5 py-1 text-[10px] font-display uppercase tracking-wider rounded-md transition-all cursor-pointer ${
+                      categoryFilter === "tv" ? "bg-zinc-800 text-pink-300 font-bold" : "text-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    TV Series
+                  </button>
+                </div>
+              </div>
+
+              {/* Sort Selection */}
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="h-3.5 w-3.5 text-zinc-500" />
+                <select
+                  value={sortBy}
+                  onChange={(e: any) => setSortBy(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs font-display uppercase tracking-wider rounded-lg px-2.5 py-1.5 outline-none focus:border-cyan-500 cursor-pointer"
+                >
+                  <option value="recent">Recently Logged</option>
+                  <option value="rating">Highest Score</option>
+                  <option value="year">Newest Year</option>
+                </select>
+              </div>
+            </div>
           </header>
 
-          {movies.length === 0 ? (
-            <EmptyState onAdd={() => setAddOpen(true)} label="movie or TV series" />
+          {filteredMovies.length === 0 ? (
+            movies.length === 0 ? (
+              <EmptyState onAdd={() => setAddOpen(true)} label="movie or TV series" />
+            ) : (
+              <div className="border border-dashed border-white/10 bg-black/40 backdrop-blur-md rounded-xl p-12 text-center space-y-2">
+                <p className="text-sm text-zinc-400 font-display tracking-wider">No matching records found for active filters.</p>
+                <button onClick={() => { setSearchQuery(""); setStatusFilter("all"); setCategoryFilter("all"); }} className="text-xs text-cyan-400 underline uppercase tracking-wider bg-transparent border-none cursor-pointer">
+                  Reset filters
+                </button>
+              </div>
+            )
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-4">
-              {movies.map((m) => (
+              {filteredMovies.map((m) => (
                 <TheatreSpotlightCard 
                   key={m.id} 
                   movie={m}
@@ -312,9 +463,29 @@ function MoviesPage() {
                 <div className={`flex flex-col justify-between space-y-6 transition-all duration-300 ${isProjecting ? "opacity-0 translate-x-4" : "opacity-100 translate-x-0"}`}>
                   <div className="space-y-5">
                     
-                    {/* Line 1: Movie Title */}
-                    <div>
+                    {/* Line 1: Movie Title & Watch State Toggle Badge */}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                       <h2 className="font-display text-3xl md:text-4xl text-white tracking-tight leading-tight">{selected.title}</h2>
+
+                      {/* 📌 BATCH 2: WATCH STATE QUICK TOGGLE SWITCH */}
+                      <button
+                        onClick={handleToggleWatchState}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-display tracking-wider uppercase transition-all shadow-md cursor-pointer ${
+                          (selected.status || "watched") === "watchlist"
+                            ? "bg-amber-500/20 border-amber-500 text-amber-300 hover:bg-amber-500/30"
+                            : "bg-emerald-500/20 border-emerald-500 text-emerald-300 hover:bg-emerald-500/30"
+                        }`}
+                      >
+                        {(selected.status || "watched") === "watchlist" ? (
+                          <>
+                            <Bookmark className="h-3.5 w-3.5" /> Plan to Watch
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Watched
+                          </>
+                        )}
+                      </button>
                     </div>
 
                     {/* Line 2: Year & Heat-Score Rating & Theme Track Controls */}
@@ -421,7 +592,7 @@ function MoviesPage() {
                               </span>
                             </button>
 
-                            {/* 🛠️ SWAP TRAILER BUTTON */}
+                            {/* SWAP TRAILER BUTTON */}
                             <button 
                               onClick={() => setShowReplaceTrailerPrompt(true)} 
                               className="p-2 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 hover:text-cyan-400 hover:border-cyan-500/40 transition-colors cursor-pointer" 
@@ -492,7 +663,7 @@ function MoviesPage() {
           </div>
         )}
 
-        {/* 🛠️ SWAP TRAILER MODAL PROMPT */}
+        {/* SWAP TRAILER MODAL PROMPT */}
         {showReplaceTrailerPrompt && selected && (
           <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
             <div className="bg-zinc-950 border border-zinc-800 p-6 rounded-2xl max-w-md w-full space-y-4 shadow-2xl">
@@ -571,6 +742,8 @@ function TheatreSpotlightCard({ movie, onSelect, glowClass, hidden }: { movie: M
     setLightCoords({ x, y, active: true });
   };
 
+  const isWatchlist = movie.status === "watchlist";
+
   return (
     <div
       ref={cardRef}
@@ -598,6 +771,13 @@ function TheatreSpotlightCard({ movie, onSelect, glowClass, hidden }: { movie: M
           }}
           className="absolute inset-0 pointer-events-none z-20"
         />
+
+        {/* 📌 BATCH 2: WATCHLIST RIBBON TAG */}
+        {isWatchlist && (
+          <div className="absolute top-2 left-2 z-30 flex items-center gap-1 bg-amber-500/90 backdrop-blur-md px-1.5 py-0.5 rounded text-[8px] font-display font-black text-black tracking-wider uppercase shadow-md">
+            <Bookmark className="h-2.5 w-2.5 fill-current" /> Watchlist
+          </div>
+        )}
 
         {movie.themeAudioUrl && (
           <div className="absolute top-2 right-2 z-30 p-1 bg-black/60 backdrop-blur-md rounded border border-white/5 text-cyan-400 opacity-60 group-hover:opacity-100 transition-opacity">

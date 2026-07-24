@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useVault, type Movie } from "@/lib/vault-store";
 import { searchGameMetadata } from "@/lib/wiki-search";
 import { toast } from "sonner";
-import { Search, Loader2, ImageOff, ChevronLeft, Download, Music, Play, Square, Check, Tv, Film, Sparkles } from "lucide-react";
+import { Search, Loader2, ImageOff, ChevronLeft, Download, Music, Play, Square, Check, Tv, Film, Sparkles, Bookmark, CheckCircle2 } from "lucide-react";
 
 type Kind = "game" | "movie";
 
@@ -44,6 +44,7 @@ export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudi
   const [year, setYear] = useState("");
   const [review, setReview] = useState("");
   const [trailerKey, setTrailerKey] = useState("");
+  const [status, setStatus] = useState<"watched" | "watchlist">("watched"); // 📌 Watch status state
 
   // Theme audio fields
   const [audioQuery, setAudioQuery] = useState("");
@@ -70,7 +71,7 @@ export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudi
     setQuery(""); setResults([]); setScrapedData(null);
     setTitle(""); setCoverUrl(""); setDescription(""); setTags(""); setRating("");
     setMagnet(""); setMirror(""); setNotes("");
-    setYear(""); setReview(""); setTrailerKey("");
+    setYear(""); setReview(""); setTrailerKey(""); setStatus("watched");
     setAudioQuery(""); setAudioTracks([]); setSelectedAudioUrl(""); setSelectedAudioTitle("");
   };
 
@@ -249,9 +250,10 @@ export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudi
         rating, review,
         themeAudioUrl: selectedAudioUrl,
         themeAudioTitle: selectedAudioTitle,
-        trailerKey
+        trailerKey,
+        status // 📌 Saves Watched / Watchlist state
       } as any);
-      toast.success("Media entry logged with trailer & soundtrack!");
+      toast.success(`Media logged to ${status === "watchlist" ? "Watchlist" : "Watched Archive"}!`);
     }
     close(false);
   };
@@ -345,6 +347,35 @@ export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudi
               </>
             ) : (
               <>
+                {/* 📌 BATCH 2: WATCH STATE SELECTION SWITCH */}
+                <div className="space-y-1.5">
+                  <Label className="font-display text-[10px] tracking-widest text-zinc-400 uppercase">Archive Status</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setStatus("watched")}
+                      className={`flex items-center justify-center gap-2 p-2 rounded-lg border text-xs font-display tracking-wider uppercase transition-all cursor-pointer ${
+                        status === "watched"
+                          ? "bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+                          : "bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700"
+                      }`}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Watched
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatus("watchlist")}
+                      className={`flex items-center justify-center gap-2 p-2 rounded-lg border text-xs font-display tracking-wider uppercase transition-all cursor-pointer ${
+                        status === "watchlist"
+                          ? "bg-amber-500/20 border-amber-500 text-amber-300 font-bold shadow-[0_0_15px_rgba(245,158,11,0.2)]"
+                          : "bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700"
+                      }`}
+                    >
+                      <Bookmark className="h-3.5 w-3.5" /> Plan to Watch
+                    </button>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Year"><Input type="number" value={year} onChange={(e) => setYear(e.target.value)} className="bg-zinc-950 border-zinc-800 text-zinc-100" /></Field>
                   <div className="space-y-1.5">

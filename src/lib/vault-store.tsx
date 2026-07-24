@@ -31,6 +31,7 @@ export interface Movie {
   themeAudioTitle?: string;
   watchProviders?: WatchProvider[];
   trailerKey?: string;
+  status?: "watched" | "watchlist"; // 📌 BATCH 2: Watch state tracking
 }
 
 export interface Track {
@@ -117,7 +118,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     if (res.ok) refreshVault();
   };
 
-  // 🛠️ UPDATE MOVIE WITHOUT DUPLICATION (HTTP PUT + Optimistic UI Update)
   const updateMovie = async (id: string, updates: Partial<Movie>) => {
     setData((prev) => ({
       ...prev,
