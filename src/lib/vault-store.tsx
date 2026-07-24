@@ -31,7 +31,7 @@ export interface Movie {
   themeAudioTitle?: string;
   watchProviders?: WatchProvider[];
   trailerKey?: string;
-  status?: "watched" | "watchlist"; // 📌 BATCH 2: Watch state tracking
+  status?: "watched" | "watchlist";
 }
 
 export interface Track {
@@ -60,6 +60,7 @@ interface VaultData {
 
 interface VaultContextValue extends VaultData {
   addGame: (g: Omit<Game, "id">) => void;
+  updateGame: (id: string, updates: Partial<Game>) => Promise<void>;
   addMovie: (m: Omit<Movie, "id" | "loggedAt">) => void;
   updateMovie: (id: string, updates: Partial<Movie>) => Promise<void>;
   addPlaylist: (p: Omit<Playlist, "id">) => void;
@@ -111,6 +112,26 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const addGame = async (g: Omit<Game, "id">) => {
     const res = await fetch("/api/vault", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "game", data: g }) });
     if (res.ok) refreshVault();
+  };
+
+  const updateGame = async (id: string, updates: Partial<Game>) => {
+    setData((prev) => ({
+      ...prev,
+      games: prev.games.map((g) => (g.id === id ? { ...g, ...updates } : g))
+    }));
+
+    try {
+      const res = await fetch("/api/vault", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "game", id, data: updates })
+      });
+      if (res.ok) {
+        refreshVault();
+      }
+    } catch (err) {
+      console.error("Failed to update game record:", err);
+    }
   };
 
   const addMovie = async (m: Omit<Movie, "id" | "loggedAt">) => {
@@ -186,7 +207,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   return (
     <VaultContext.Provider value={{ 
-      ...data, addGame, addMovie, updateMovie, addPlaylist, removeGame, removeMovie, removePlaylist, 
+      ...data, addGame, updateGame, addMovie, updateMovie, addPlaylist, removeGame, removeMovie, removePlaylist, 
       addTrackToPlaylist, removeTrackFromPlaylist, refreshVault,
       currentTrack, activePlaylist, isPlaying, playTrackDirectly, playPlaylistDirectly,
       setIsPlaying, nextTrack, prevTrack

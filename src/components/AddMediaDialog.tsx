@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useVault, type Movie } from "@/lib/vault-store";
+import { useVault, type Movie, type Game } from "@/lib/vault-store";
 import { searchGameMetadata } from "@/lib/wiki-search";
 import { toast } from "sonner";
 import { Search, Loader2, ImageOff, ChevronLeft, Download, Music, Play, Square, Check, Tv, Film, Sparkles, Bookmark, CheckCircle2 } from "lucide-react";
@@ -16,10 +16,11 @@ interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   targetMovieToEditAudio?: Movie | null;
+  targetGameToEditAudio?: Game | null;
 }
 
-export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudio }: Props) {
-  const { addGame, addMovie, updateMovie } = useVault();
+export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudio, targetGameToEditAudio }: Props) {
+  const { addGame, updateGame, addMovie, updateMovie } = useVault();
   const [step, setStep] = useState<"search" | "details" | "audio">("search");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -44,7 +45,7 @@ export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudi
   const [year, setYear] = useState("");
   const [review, setReview] = useState("");
   const [trailerKey, setTrailerKey] = useState("");
-  const [status, setStatus] = useState<"watched" | "watchlist">("watched"); // 📌 Watch status state
+  const [status, setStatus] = useState<"watched" | "watchlist">("watched");
 
   // Theme audio fields
   const [audioQuery, setAudioQuery] = useState("");
@@ -62,8 +63,14 @@ export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudi
       setSelectedAudioUrl(targetMovieToEditAudio.themeAudioUrl || "");
       setSelectedAudioTitle(targetMovieToEditAudio.themeAudioTitle || "");
       runAudioSearch(targetMovieToEditAudio.title);
+    } else if (targetGameToEditAudio && open) {
+      setStep("audio");
+      setAudioQuery(targetGameToEditAudio.title);
+      setSelectedAudioUrl(targetGameToEditAudio.themeAudioUrl || "");
+      setSelectedAudioTitle(targetGameToEditAudio.themeAudioTitle || "");
+      runAudioSearch(targetGameToEditAudio.title);
     }
-  }, [targetMovieToEditAudio, open]);
+  }, [targetMovieToEditAudio, targetGameToEditAudio, open]);
 
   const reset = () => {
     stopPreview();
@@ -234,6 +241,16 @@ export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudi
       return;
     }
 
+    if (targetGameToEditAudio) {
+      updateGame(targetGameToEditAudio.id, {
+        themeAudioUrl: selectedAudioUrl,
+        themeAudioTitle: selectedAudioTitle
+      });
+      toast.success("Updated theme soundtrack!");
+      close(false);
+      return;
+    }
+
     const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
     if (kind === "game") {
       addGame({
@@ -251,7 +268,7 @@ export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudi
         themeAudioUrl: selectedAudioUrl,
         themeAudioTitle: selectedAudioTitle,
         trailerKey,
-        status // 📌 Saves Watched / Watchlist state
+        status
       } as any);
       toast.success(`Media logged to ${status === "watchlist" ? "Watchlist" : "Watched Archive"}!`);
     }
@@ -347,7 +364,6 @@ export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudi
               </>
             ) : (
               <>
-                {/* 📌 BATCH 2: WATCH STATE SELECTION SWITCH */}
                 <div className="space-y-1.5">
                   <Label className="font-display text-[10px] tracking-widest text-zinc-400 uppercase">Archive Status</Label>
                   <div className="grid grid-cols-2 gap-2">
@@ -407,7 +423,7 @@ export function AddMediaDialog({ kind, open, onOpenChange, targetMovieToEditAudi
 
         {step === "audio" && (
           <div className="space-y-4">
-            {!targetMovieToEditAudio && (
+            {!targetMovieToEditAudio && !targetGameToEditAudio && (
               <button onClick={() => { stopPreview(); setStep("details"); }} className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 border-none bg-transparent cursor-pointer"><ChevronLeft className="h-3 w-3" /> back to details</button>
             )}
             
